@@ -45,14 +45,17 @@ const StoreDashboard: React.FC = () => {
   const currentStore = stores.find(store => store.id === user?.storeId);
   const storePickups = pickupSchedules.filter(pickup => pickup.storeId === user?.storeId);
   
-  // Get selected date and pickups for this store using consistent date formatting
-  const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
+  // Get selected date and pickups for this store using consistent date formatting (timezone-safe)
+  const localSelectedDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const selectedDateString = format(localSelectedDate, 'yyyy-MM-dd');
   const selectedDatePickups = storePickups.filter(pickup => 
     pickup.date === selectedDateString
   );
   
-  // Get today's date and pickups for this store
-  const today = format(new Date(), 'yyyy-MM-dd');
+  // Get today's date and pickups for this store (timezone-safe)
+  const todayDate = new Date();
+  const localToday = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+  const today = format(localToday, 'yyyy-MM-dd');
   const todayPickups = storePickups.filter(pickup => 
     pickup.date === today
   );
