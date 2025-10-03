@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+// Admin Dashboard Component - Date Range Blocking Feature
 const AdminDashboard: React.FC = () => {
   const { 
     employees, 
