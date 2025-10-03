@@ -62,8 +62,8 @@ const AdminDashboard: React.FC = () => {
   const [tempSelectedDateForCapacity, setTempSelectedDateForCapacity] = useState<Date | undefined>();
   const [selectedStoreForCapacity, setSelectedStoreForCapacity] = useState('');
   const [newCapacityValue, setNewCapacityValue] = useState("");
-  const [selectedDateForBlock, setSelectedDateForBlock] = useState<Date>();
-  const [tempSelectedDateForBlock, setTempSelectedDateForBlock] = useState<Date>();
+  const [selectedDateRangeForBlock, setSelectedDateRangeForBlock] = useState<{ from: Date | undefined; to?: Date | undefined }>();
+  const [tempSelectedDateRangeForBlock, setTempSelectedDateRangeForBlock] = useState<{ from: Date | undefined; to?: Date | undefined }>();
   const [blockReason, setBlockReason] = useState("");
 
   const handleAddEmployee = () => {
@@ -142,24 +142,40 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleBlockDate = () => {
-    if (selectedDateForBlock) {
-      const localDate = new Date(selectedDateForBlock.getFullYear(), selectedDateForBlock.getMonth(), selectedDateForBlock.getDate());
-      const dateStr = format(localDate, 'yyyy-MM-dd');
-      if (isDateBlocked(dateStr)) {
-        unblockDate(dateStr);
-        toast({
-          title: "Data desbloqueada",
-          description: `A data ${format(selectedDateForBlock, 'dd/MM/yyyy', { locale: ptBR })} foi desbloqueada`,
-        });
-      } else {
-        blockDate(dateStr, blockReason);
-        toast({
-          title: "Data bloqueada",
-          description: `A data ${format(selectedDateForBlock, 'dd/MM/yyyy', { locale: ptBR })} foi bloqueada para agendamentos`,
-        });
+    if (selectedDateRangeForBlock?.from) {
+      const startDate = selectedDateRangeForBlock.from;
+      const endDate = selectedDateRangeForBlock.to || startDate;
+      
+      // Create array of dates in the range
+      const dates: Date[] = [];
+      const currentDate = new Date(startDate);
+      const finalDate = new Date(endDate);
+      
+      while (currentDate <= finalDate) {
+        dates.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-      setSelectedDateForBlock(undefined);
-      setTempSelectedDateForBlock(undefined);
+      
+      // Block all dates in range
+      dates.forEach(date => {
+        const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const dateStr = format(localDate, 'yyyy-MM-dd');
+        if (!isDateBlocked(dateStr)) {
+          blockDate(dateStr, blockReason);
+        }
+      });
+      
+      const dateRangeText = selectedDateRangeForBlock.to 
+        ? `${format(startDate, 'dd/MM/yyyy', { locale: ptBR })} até ${format(endDate, 'dd/MM/yyyy', { locale: ptBR })}`
+        : format(startDate, 'dd/MM/yyyy', { locale: ptBR });
+      
+      toast({
+        title: "Datas bloqueadas",
+        description: `${dates.length} data(s) bloqueada(s): ${dateRangeText}`,
+      });
+      
+      setSelectedDateRangeForBlock(undefined);
+      setTempSelectedDateRangeForBlock(undefined);
       setBlockReason("");
     }
   };
@@ -699,36 +715,44 @@ const AdminDashboard: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="block-date">Selecionar Data</Label>
+                  <Label htmlFor="block-date">Selecionar Data ou Intervalo</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
                         className={cn(
                           "w-full justify-start text-left font-normal",
-                          !selectedDateForBlock && "text-muted-foreground"
+                          !selectedDateRangeForBlock?.from && "text-muted-foreground"
                         )}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDateForBlock ? format(selectedDateForBlock, "dd/MM/yyyy", { locale: ptBR }) : "Selecione uma data"}
+                        {selectedDateRangeForBlock?.from ? (
+                          selectedDateRangeForBlock.to ? (
+                            `${format(selectedDateRangeForBlock.from, "dd/MM/yyyy", { locale: ptBR })} - ${format(selectedDateRangeForBlock.to, "dd/MM/yyyy", { locale: ptBR })}`
+                          ) : (
+                            format(selectedDateRangeForBlock.from, "dd/MM/yyyy", { locale: ptBR })
+                          )
+                        ) : (
+                          "Selecione uma data ou intervalo"
+                        )}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <div className="space-y-3">
                         <CalendarComponent
-                          mode="single"
-                          selected={tempSelectedDateForBlock}
-                          onSelect={setTempSelectedDateForBlock}
+                          mode="range"
+                          selected={tempSelectedDateRangeForBlock}
+                          onSelect={setTempSelectedDateRangeForBlock}
                           initialFocus
                           className="p-3 pointer-events-auto"
                         />
                         <div className="px-3 pb-3">
                           <Button 
-                            onClick={() => setSelectedDateForBlock(tempSelectedDateForBlock)}
+                            onClick={() => setSelectedDateRangeForBlock(tempSelectedDateRangeForBlock)}
                             className="w-full bg-gradient-primary"
                             size="sm"
                           >
-                            Aplicar Filtro
+                            Aplicar Seleção
                           </Button>
                         </div>
                       </div>
@@ -749,21 +773,11 @@ const AdminDashboard: React.FC = () => {
               
               <Button 
                 onClick={handleBlockDate}
-                disabled={!selectedDateForBlock}
-                className="w-full"
-                variant={selectedDateForBlock && isDateBlocked(selectedDateForBlock ? format(new Date(selectedDateForBlock.getFullYear(), selectedDateForBlock.getMonth(), selectedDateForBlock.getDate()), 'yyyy-MM-dd') : '') ? "destructive" : "default"}
+                disabled={!selectedDateRangeForBlock?.from}
+                className="w-full bg-gradient-primary"
               >
-                {selectedDateForBlock && isDateBlocked(selectedDateForBlock ? format(new Date(selectedDateForBlock.getFullYear(), selectedDateForBlock.getMonth(), selectedDateForBlock.getDate()), 'yyyy-MM-dd') : '') ? (
-                  <>
-                    <Unlock className="mr-2 h-4 w-4" />
-                    Desbloquear Data
-                  </>
-                ) : (
-                  <>
-                    <Ban className="mr-2 h-4 w-4" />
-                    Bloquear Data
-                  </>
-                )}
+                <Ban className="mr-2 h-4 w-4" />
+                Bloquear {selectedDateRangeForBlock?.to ? "Intervalo" : "Data"}
               </Button>
             </CardContent>
           </Card>
