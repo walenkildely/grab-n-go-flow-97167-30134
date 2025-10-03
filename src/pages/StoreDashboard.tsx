@@ -46,15 +46,13 @@ const StoreDashboard: React.FC = () => {
   const storePickups = pickupSchedules.filter(pickup => pickup.storeId === user?.storeId);
   
   // Get selected date and pickups for this store using consistent date formatting
-  const selectedDateLocal = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-  const selectedDateString = format(selectedDateLocal, 'yyyy-MM-dd');
+  const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
   const selectedDatePickups = storePickups.filter(pickup => 
     pickup.date === selectedDateString
   );
   
   // Get today's date and pickups for this store
-  const todayLocal = new Date();
-  const today = format(new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate()), 'yyyy-MM-dd');
+  const today = format(new Date(), 'yyyy-MM-dd');
   const todayPickups = storePickups.filter(pickup => 
     pickup.date === today
   );
