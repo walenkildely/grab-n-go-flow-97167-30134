@@ -20,8 +20,8 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
+      const result = await login(email, password);
+      if (!result.error) {
         toast({
           title: "Login realizado com sucesso!",
           description: "Bem-vindo ao sistema de retiradas.",
@@ -29,7 +29,7 @@ const LoginForm: React.FC = () => {
       } else {
         toast({
           title: "Erro no login",
-          description: "Email ou senha incorretos.",
+          description: result.error,
           variant: "destructive",
         });
       }
@@ -106,12 +106,9 @@ const LoginForm: React.FC = () => {
             </form>
 
             <Alert className="mt-6">
-              <AlertDescription>
-                <strong>Usuários de demonstração:</strong><br />
-                • Admin: admin@empresa.com<br />
-                • Loja: loja.centro@empresa.com<br />
-                • Funcionário: joao.silva@empresa.com<br />
-                <em>Senha para todos: 123456</em>
+              <AlertDescription className="text-sm">
+                <strong>Primeiro acesso?</strong><br />
+                Solicite suas credenciais ao administrador do sistema.
               </AlertDescription>
             </Alert>
           </CardContent>

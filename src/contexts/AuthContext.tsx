@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'admin' | 'store' | 'employee';
 
@@ -60,13 +62,15 @@ export interface BlockedDate {
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   employees: Employee[];
   stores: Store[];
   pickupSchedules: PickupSchedule[];
   storeCapacities: StoreCapacity[];
   blockedDates: BlockedDate[];
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<{ error?: string }>;
+  signup: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error?: string }>;
+  logout: () => Promise<void>;
   addEmployee: (employee: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => void;
   addStore: (store: Omit<Store, 'id'>) => void;
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => string;
@@ -85,70 +89,122 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Default data
-const defaultUsers: User[] = [
-  { id: '1', name: 'Admin', email: 'admin@empresa.com', role: 'admin' },
-  { id: '2', name: 'Loja Centro', email: 'loja.centro@empresa.com', role: 'store', storeId: '1' },
-  { id: '3', name: 'João Silva', email: 'joao.silva@empresa.com', role: 'employee', employeeId: '1001', managerId: 'gerente1' }
-];
-
-const defaultEmployees: Employee[] = [
-  {
-    id: '1001',
-    name: 'João Silva',
-    email: 'joao.silva@empresa.com',
-    employeeId: '1001',
-    managerId: 'gerente1@empresa.com',
-    department: 'Vendas',
-    monthlyLimit: 6,
-    currentMonthPickups: 0,
-    lastResetMonth: new Date().toISOString().slice(0, 7)
-  }
-];
-
-const defaultStores: Store[] = [
-  { id: '1', name: 'Loja Centro', maxCapacity: 10, location: 'Centro da Cidade' },
-  { id: '2', name: 'Loja Shopping', maxCapacity: 15, location: 'Shopping Mall' }
-];
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [pickupSchedules, setPickupSchedules] = useState<PickupSchedule[]>([]);
   const [storeCapacities, setStoreCapacities] = useState<StoreCapacity[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
-  const [users, setUsers] = useState<User[]>(defaultUsers);
 
   useEffect(() => {
-    // Load data from localStorage
-    const savedEmployees = localStorage.getItem('employees');
-    const savedStores = localStorage.getItem('stores');
-    const savedPickups = localStorage.getItem('pickupSchedules');
-    const savedCapacities = localStorage.getItem('storeCapacities');
-    const savedBlockedDates = localStorage.getItem('blockedDates');
-    const savedUser = localStorage.getItem('currentUser');
-    const savedUsers = localStorage.getItem('users');
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      } else {
+        setUser(null);
+      }
+    });
 
-    setEmployees(savedEmployees ? JSON.parse(savedEmployees) : defaultEmployees);
-    setStores(savedStores ? JSON.parse(savedStores) : defaultStores);
-    setPickupSchedules(savedPickups ? JSON.parse(savedPickups) : []);
-    setStoreCapacities(savedCapacities ? JSON.parse(savedCapacities) : []);
-    setBlockedDates(savedBlockedDates ? JSON.parse(savedBlockedDates) : []);
-    setUsers(savedUsers ? JSON.parse(savedUsers) : defaultUsers);
-    
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      }
+    });
 
-    // Check if we need to reset monthly limits
-    checkAndResetMonthlyLimits();
+    // Load blocked dates
+    loadBlockedDates();
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const loadUserData = async (userId: string) => {
+    try {
+      // Get user roles
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .single();
+
+      if (!rolesData) return;
+
+      const role = rolesData.role as UserRole;
+
+      // Get profile data
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (!profileData) return;
+
+      // Based on role, load additional data
+      if (role === 'employee') {
+        const { data: employeeData } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (employeeData) {
+          setUser({
+            id: userId,
+            name: employeeData.name,
+            email: employeeData.email,
+            role: 'employee',
+            employeeId: employeeData.id
+          });
+        }
+      } else if (role === 'store') {
+        const { data: storeData } = await supabase
+          .from('stores')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (storeData) {
+          setUser({
+            id: userId,
+            name: storeData.name,
+            email: profileData.email,
+            role: 'store',
+            storeId: storeData.id
+          });
+        }
+      } else if (role === 'admin') {
+        setUser({
+          id: userId,
+          name: profileData.full_name || 'Admin',
+          email: profileData.email,
+          role: 'admin'
+        });
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
+
+  const loadBlockedDates = async () => {
+    const { data } = await supabase
+      .from('blocked_dates')
+      .select('*');
+    
+    if (data) {
+      setBlockedDates(data.map(d => ({ date: d.date, reason: d.reason || undefined })));
+    }
+  };
 
   const checkAndResetMonthlyLimits = () => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const savedEmployees = localStorage.getItem('employees');
-    const employeeList = savedEmployees ? JSON.parse(savedEmployees) : defaultEmployees;
+    const employeeList = savedEmployees ? JSON.parse(savedEmployees) : [];
     
     const updatedEmployees = employeeList.map((emp: Employee) => {
       if (emp.lastResetMonth !== currentMonth) {
@@ -165,20 +221,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('employees', JSON.stringify(updatedEmployees));
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    // Simple mock authentication
-    const foundUser = users.find(u => u.email === email);
-    if (foundUser && password === '123456') {
-      setUser(foundUser);
-      localStorage.setItem('currentUser', JSON.stringify(foundUser));
-      return true;
+  const login = async (email: string, password: string): Promise<{ error?: string }> => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return {};
+    } catch (error) {
+      return { error: 'Erro ao fazer login' };
     }
-    return false;
   };
 
-  const logout = () => {
+  const signup = async (email: string, password: string, fullName: string, role: UserRole): Promise<{ error?: string }> => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName
+          },
+          emailRedirectTo: `${window.location.origin}/`
+        }
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      if (data.user) {
+        // Create role entry
+        await supabase.from('user_roles').insert({
+          user_id: data.user.id,
+          role: role
+        });
+      }
+
+      return {};
+    } catch (error) {
+      return { error: 'Erro ao criar conta' };
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('currentUser');
+    setSession(null);
   };
 
   const addEmployee = (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
@@ -189,23 +283,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastResetMonth: new Date().toISOString().slice(0, 7)
     };
     
-    // Create user account for the employee
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: employeeData.name,
-      email: employeeData.email,
-      role: 'employee',
-      employeeId: employeeData.employeeId,
-      managerId: employeeData.managerId
-    };
-    
     const updatedEmployees = [...employees, newEmployee];
-    const updatedUsers = [...users, newUser];
-    
     setEmployees(updatedEmployees);
-    setUsers(updatedUsers);
     localStorage.setItem('employees', JSON.stringify(updatedEmployees));
-    localStorage.setItem('users', JSON.stringify(updatedUsers));
   };
 
   const addStore = (storeData: Omit<Store, 'id'>) => {
@@ -214,22 +294,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: Date.now().toString()
     };
     
-    // Create user account for the store
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: storeData.name,
-      email: `${storeData.name.toLowerCase().replace(/\s+/g, '.')}@empresa.com`,
-      role: 'store',
-      storeId: newStore.id
-    };
-    
     const updatedStores = [...stores, newStore];
-    const updatedUsers = [...users, newUser];
-    
     setStores(updatedStores);
-    setUsers(updatedUsers);
     localStorage.setItem('stores', JSON.stringify(updatedStores));
-    localStorage.setItem('users', JSON.stringify(updatedUsers));
   };
 
   const generateToken = (): string => {
@@ -399,17 +466,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const blockDate = (date: string, reason?: string) => {
-    const newBlockedDate: BlockedDate = { date, reason };
-    const updatedBlockedDates = [...blockedDates, newBlockedDate];
-    setBlockedDates(updatedBlockedDates);
-    localStorage.setItem('blockedDates', JSON.stringify(updatedBlockedDates));
+  const blockDate = async (date: string, reason?: string) => {
+    await supabase.from('blocked_dates').insert({ date, reason });
+    loadBlockedDates();
   };
 
-  const unblockDate = (date: string) => {
-    const updatedBlockedDates = blockedDates.filter(bd => bd.date !== date);
-    setBlockedDates(updatedBlockedDates);
-    localStorage.setItem('blockedDates', JSON.stringify(updatedBlockedDates));
+  const unblockDate = async (date: string) => {
+    await supabase.from('blocked_dates').delete().eq('date', date);
+    loadBlockedDates();
   };
 
   const isDateBlocked = (date: string): boolean => {
@@ -419,12 +483,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       user,
+      session,
       employees,
       stores,
       pickupSchedules,
       storeCapacities,
       blockedDates,
       login,
+      signup,
       logout,
       addEmployee,
       addStore,
