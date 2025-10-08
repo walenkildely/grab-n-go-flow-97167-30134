@@ -68,10 +68,11 @@ interface AuthContextType {
   pickupSchedules: PickupSchedule[];
   storeCapacities: StoreCapacity[];
   blockedDates: BlockedDate[];
+  needsPasswordChange: boolean;
   login: (email: string, password: string) => Promise<{ error?: string }>;
   signup: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
-  addEmployee: (employee: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => void;
+  addEmployee: (employee: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => Promise<void>;
   addStore: (store: Omit<Store, 'id'>) => void;
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => string;
   confirmPickup: (token: string) => boolean;
@@ -85,6 +86,7 @@ interface AuthContextType {
   blockDate: (date: string, reason?: string) => void;
   unblockDate: (date: string) => void;
   isDateBlocked: (date: string) => boolean;
+  setNeedsPasswordChange: (value: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -97,6 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pickupSchedules, setPickupSchedules] = useState<PickupSchedule[]>([]);
   const [storeCapacities, setStoreCapacities] = useState<StoreCapacity[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
 
   useEffect(() => {
     // Set up auth state listener
@@ -291,17 +294,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
-  const addEmployee = (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
-    const newEmployee: Employee = {
-      ...employeeData,
-      id: Date.now().toString(),
-      currentMonthPickups: 0,
-      lastResetMonth: new Date().toISOString().slice(0, 7)
-    };
-    
-    const updatedEmployees = [...employees, newEmployee];
-    setEmployees(updatedEmployees);
-    localStorage.setItem('employees', JSON.stringify(updatedEmployees));
+  const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
+    try {
+      // Create user with default password "1234"
+      const { data: authData, error: signupError } = await supabase.auth.signUp({
+        email: employeeData.email,
+        password: '1234',
+        options: {
+          data: {
+            full_name: employeeData.name
+          },
+          emailRedirectTo: `${window.location.origin}/`
+        }
+      });
+
+      if (signupError) {
+        throw signupError;
+      }
+
+      if (authData.user) {
+        // Create role entry for employee
+        await supabase.from('user_roles').insert({
+          user_id: authData.user.id,
+          role: 'employee'
+        });
+
+        // Create employee record
+        await supabase.from('employees').insert({
+          user_id: authData.user.id,
+          name: employeeData.name,
+          email: employeeData.email,
+          cpf: employeeData.employeeId,
+          monthly_limit: employeeData.monthlyLimit,
+          current_month_pickups: 0,
+          last_reset_month: new Date().toISOString().slice(0, 7)
+        });
+
+        // Reload employees
+        const { data: employeesData } = await supabase.from('employees').select('*');
+        if (employeesData) {
+          const formattedEmployees = employeesData.map(emp => ({
+            id: emp.id,
+            name: emp.name,
+            email: emp.email,
+            employeeId: emp.cpf,
+            managerId: '',
+            department: employeeData.department || '',
+            monthlyLimit: emp.monthly_limit,
+            currentMonthPickups: emp.current_month_pickups,
+            lastResetMonth: emp.last_reset_month || ''
+          }));
+          setEmployees(formattedEmployees);
+        }
+      }
+    } catch (error) {
+      console.error('Error adding employee:', error);
+      throw error;
+    }
   };
 
   const addStore = (storeData: Omit<Store, 'id'>) => {
@@ -505,6 +554,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       pickupSchedules,
       storeCapacities,
       blockedDates,
+      needsPasswordChange,
       login,
       signup,
       logout,
@@ -521,7 +571,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateStoreDateCapacity,
       blockDate,
       unblockDate,
-      isDateBlocked
+      isDateBlocked,
+      setNeedsPasswordChange
     }}>
       {children}
     </AuthContext.Provider>

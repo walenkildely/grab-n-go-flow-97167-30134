@@ -67,7 +67,7 @@ const AdminDashboard: React.FC = () => {
   const [tempSelectedDateRangeForBlock, setTempSelectedDateRangeForBlock] = useState<{ from: Date | undefined; to?: Date | undefined }>();
   const [blockReason, setBlockReason] = useState("");
 
-  const handleAddEmployee = () => {
+  const handleAddEmployee = async () => {
     if (!newEmployee.name || !newEmployee.email || !newEmployee.employeeId) {
       toast({
         title: "Campos obrigatórios",
@@ -77,20 +77,28 @@ const AdminDashboard: React.FC = () => {
       return;
     }
 
-    addEmployee(newEmployee);
-    setNewEmployee({
-      name: '',
-      email: '',
-      employeeId: '',
-      managerId: '',
-      department: '',
-      monthlyLimit: 6
-    });
-    
-    toast({
-      title: "Funcionário adicionado!",
-      description: `${newEmployee.name} foi cadastrado com sucesso.`,
-    });
+    try {
+      await addEmployee(newEmployee);
+      setNewEmployee({
+        name: '',
+        email: '',
+        employeeId: '',
+        managerId: '',
+        department: '',
+        monthlyLimit: 6
+      });
+      
+      toast({
+        title: "Funcionário adicionado!",
+        description: `${newEmployee.name} foi cadastrado com sucesso. Senha padrão: 1234`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao adicionar funcionário",
+        description: "Ocorreu um erro ao cadastrar o funcionário. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddStore = () => {

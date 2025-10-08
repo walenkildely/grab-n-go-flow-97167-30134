@@ -31,6 +31,7 @@ import QRCode from 'qrcode';
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { EmployeeSidebar } from '@/components/EmployeeSidebar';
 import { EmployeeProfile } from '@/components/EmployeeProfile';
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
 
 const EmployeeDashboard: React.FC = () => {
   const { 
@@ -40,7 +41,9 @@ const EmployeeDashboard: React.FC = () => {
     pickupSchedules, 
     schedulePickup, 
     getAvailableCapacity,
-    isDateBlocked 
+    isDateBlocked,
+    needsPasswordChange,
+    setNeedsPasswordChange
   } = useAuth();
   const { toast } = useToast();
   const [selectedStore, setSelectedStore] = useState('');
@@ -537,25 +540,31 @@ const EmployeeDashboard: React.FC = () => {
   };
 
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="min-h-screen flex w-full">
-        <EmployeeSidebar activeView={activeView} onViewChange={setActiveView} />
-        <SidebarInset className="flex-1">
-          <header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
-            <SidebarTrigger className="-ml-1" />
-            <div className="flex items-center space-x-2">
-              <div className="h-6 w-6 rounded bg-gradient-primary flex items-center justify-center">
-                <Building2 className="h-3 w-3 text-primary-foreground" />
+    <>
+      <ChangePasswordDialog 
+        open={needsPasswordChange} 
+        onPasswordChanged={() => setNeedsPasswordChange(false)}
+      />
+      <SidebarProvider defaultOpen={true}>
+        <div className="min-h-screen flex w-full">
+          <EmployeeSidebar activeView={activeView} onViewChange={setActiveView} />
+          <SidebarInset className="flex-1">
+            <header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b">
+              <SidebarTrigger className="-ml-1" />
+              <div className="flex items-center space-x-2">
+                <div className="h-6 w-6 rounded bg-gradient-primary flex items-center justify-center">
+                  <Building2 className="h-3 w-3 text-primary-foreground" />
+                </div>
+                <h1 className="text-lg font-semibold">Sistema de Retiradas</h1>
               </div>
-              <h1 className="text-lg font-semibold">Sistema de Retiradas</h1>
-            </div>
-          </header>
-          <main className="flex-1 p-6">
-            {renderContent()}
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+            </header>
+            <main className="flex-1 p-6">
+              {renderContent()}
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
+    </>
   );
 };
 
