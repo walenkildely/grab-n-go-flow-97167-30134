@@ -126,24 +126,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadUserData = async (userId: string) => {
     try {
       // Get user roles
-      const { data: rolesData } = await supabase
+      const { data: rolesData, error: rolesError } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
-      if (!rolesData) return;
+      if (rolesError) {
+        console.error('Error loading roles:', rolesError);
+        return;
+      }
+
+      if (!rolesData) {
+        console.log('No role found for user');
+        return;
+      }
 
       const role = rolesData.role as UserRole;
 
       // Get profile data
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      if (!profileData) return;
+      if (profileError) {
+        console.error('Error loading profile:', profileError);
+        return;
+      }
+
+      if (!profileData) {
+        console.log('No profile found for user');
+        return;
+      }
 
       // Based on role, load additional data
       if (role === 'employee') {
@@ -151,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .from('employees')
           .select('*')
           .eq('user_id', userId)
-          .single();
+          .maybeSingle();
 
         if (employeeData) {
           setUser({
@@ -167,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .from('stores')
           .select('*')
           .eq('user_id', userId)
-          .single();
+          .maybeSingle();
 
         if (storeData) {
           setUser({
