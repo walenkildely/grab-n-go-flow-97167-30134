@@ -49,15 +49,26 @@ const InitialSetup = () => {
 
       if (roleError) throw roleError;
 
-      toast({
-        title: 'Administrador criado com sucesso!',
-        description: 'Você pode fazer login agora.',
+      // 3. Sign out from auto-login
+      await supabase.auth.signOut();
+
+      // 4. Sign in manually to ensure proper session setup
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      // Redirect to login
+      if (signInError) throw signInError;
+
+      toast({
+        title: 'Administrador criado com sucesso!',
+        description: 'Redirecionando...',
+      });
+
+      // Wait for AuthContext to load user data before redirecting
       setTimeout(() => {
         navigate('/');
-      }, 2000);
+      }, 1500);
     } catch (error: any) {
       toast({
         title: 'Erro ao criar administrador',
