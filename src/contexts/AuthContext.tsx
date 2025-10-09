@@ -251,9 +251,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: error.message };
       }
 
-      // Check if user needs to change default password
-      if (data.session && password === '123456') {
-        setNeedsPasswordChange(true);
+      if (data.session?.user) {
+        // Load user data immediately
+        await loadUserData(data.session.user.id);
+        
+        // Check if user needs to change default password
+        if (password === '123456') {
+          setNeedsPasswordChange(true);
+        }
       }
 
       return {};
