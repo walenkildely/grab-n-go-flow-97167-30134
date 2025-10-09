@@ -90,7 +90,7 @@ const AdminDashboard: React.FC = () => {
       
       toast({
         title: "Funcionário adicionado!",
-        description: `${newEmployee.name} foi cadastrado com sucesso. Senha padrão: 1234`,
+        description: `${newEmployee.name} foi cadastrado com sucesso. Senha padrão: 123456`,
       });
     } catch (error) {
       toast({

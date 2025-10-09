@@ -242,13 +242,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<{ error?: string }> => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error, data } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) {
         return { error: error.message };
+      }
+
+      // Check if user needs to change default password
+      if (data.session && password === '123456') {
+        setNeedsPasswordChange(true);
       }
 
       return {};
@@ -296,10 +301,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
     try {
-      // Create user with default password "1234"
+      // Create user with default password "123456"
       const { data: authData, error: signupError } = await supabase.auth.signUp({
         email: employeeData.email,
-        password: '1234',
+        password: '123456',
         options: {
           data: {
             full_name: employeeData.name
