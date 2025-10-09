@@ -128,6 +128,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadUserData = async (userId: string) => {
     try {
+      console.log('Loading user data for:', userId);
+      
       // Get user roles
       const { data: rolesData, error: rolesError } = await supabase
         .from('user_roles')
@@ -146,6 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const role = rolesData.role as UserRole;
+      console.log('User role:', role);
 
       // Get profile data
       const { data: profileData, error: profileError } = await supabase
@@ -166,11 +169,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Based on role, load additional data
       if (role === 'employee') {
-        const { data: employeeData } = await supabase
+        const { data: employeeData, error: employeeError } = await supabase
           .from('employees')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle();
+
+        console.log('Employee data:', employeeData, 'Error:', employeeError);
 
         if (employeeData) {
           setUser({
@@ -180,6 +185,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'employee',
             employeeId: employeeData.id
           });
+        } else {
+          console.error('No employee data found for user');
         }
       } else if (role === 'store') {
         const { data: storeData } = await supabase
@@ -324,13 +331,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (authData.user) {
         // Create role entry for employee
-        await supabase.from('user_roles').insert({
+        const { error: roleError } = await supabase.from('user_roles').insert({
           user_id: authData.user.id,
           role: 'employee'
         });
 
+        if (roleError) {
+          console.error('Error creating user role:', roleError);
+          throw new Error('Falha ao criar role do funcionário');
+        }
+
         // Create employee record
-        await supabase.from('employees').insert({
+        const { error: employeeError } = await supabase.from('employees').insert({
           user_id: authData.user.id,
           name: employeeData.name,
           email: employeeData.email,
@@ -339,6 +351,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           current_month_pickups: 0,
           last_reset_month: new Date().toISOString().slice(0, 7)
         });
+
+        if (employeeError) {
+          console.error('Error creating employee record:', employeeError);
+          throw new Error('Falha ao criar registro do funcionário');
+        }
 
         // Reload employees
         const { data: employeesData } = await supabase.from('employees').select('*');
