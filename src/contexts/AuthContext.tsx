@@ -313,8 +313,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
     try {
-      // Store current session to restore after
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      // Get current admin session
+      const { data: { session: adminSession } } = await supabase.auth.getSession();
+      
+      if (!adminSession) {
+        throw new Error('Admin não está autenticado');
+      }
+
+      console.log('Admin session:', adminSession.user.id);
       
       // Create user with default password "123456"
       const { data: authData, error: signupError } = await supabase.auth.signUp({
@@ -329,6 +335,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (signupError) {
+        console.error('Signup error:', signupError);
         throw signupError;
       }
 
@@ -336,24 +343,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Falha ao criar usuário');
       }
 
-      console.log('Created user:', authData.user.id);
+      const newUserId = authData.user.id;
+      console.log('Created user:', newUserId);
 
-      // Create role entry for employee
+      // Wait a bit to ensure user is created
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Restore admin session immediately
+      await supabase.auth.setSession({
+        access_token: adminSession.access_token,
+        refresh_token: adminSession.refresh_token,
+      });
+
+      console.log('Admin session restored');
+
+      // Create role entry for employee (as admin)
       const { error: roleError } = await supabase.from('user_roles').insert({
-        user_id: authData.user.id,
+        user_id: newUserId,
         role: 'employee'
       });
 
       if (roleError) {
         console.error('Error creating user role:', roleError);
-        throw new Error('Falha ao criar role do funcionário');
+        throw new Error('Falha ao criar role do funcionário: ' + roleError.message);
       }
 
       console.log('Created role for user');
 
-      // Create employee record
+      // Create employee record (as admin)
       const { error: employeeError } = await supabase.from('employees').insert({
-        user_id: authData.user.id,
+        user_id: newUserId,
         name: employeeData.name,
         email: employeeData.email,
         cpf: employeeData.employeeId,
@@ -364,18 +383,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (employeeError) {
         console.error('Error creating employee record:', employeeError);
-        throw new Error('Falha ao criar registro do funcionário');
+        throw new Error('Falha ao criar registro do funcionário: ' + employeeError.message);
       }
 
       console.log('Created employee record');
-
-      // If the signup auto-logged in the new user, restore admin session
-      if (currentSession) {
-        await supabase.auth.setSession({
-          access_token: currentSession.access_token,
-          refresh_token: currentSession.refresh_token,
-        });
-      }
 
       // Reload employees
       const { data: employeesData } = await supabase.from('employees').select('*');
