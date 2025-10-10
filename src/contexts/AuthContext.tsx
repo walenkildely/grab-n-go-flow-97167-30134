@@ -313,6 +313,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
     try {
+      // Store current session to restore after
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      
       // Create user with default password "123456"
       const { data: authData, error: signupError } = await supabase.auth.signUp({
         email: employeeData.email,
@@ -329,50 +332,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw signupError;
       }
 
-      if (authData.user) {
-        // Create role entry for employee
-        const { error: roleError } = await supabase.from('user_roles').insert({
-          user_id: authData.user.id,
-          role: 'employee'
+      if (!authData.user) {
+        throw new Error('Falha ao criar usuário');
+      }
+
+      console.log('Created user:', authData.user.id);
+
+      // Create role entry for employee
+      const { error: roleError } = await supabase.from('user_roles').insert({
+        user_id: authData.user.id,
+        role: 'employee'
+      });
+
+      if (roleError) {
+        console.error('Error creating user role:', roleError);
+        throw new Error('Falha ao criar role do funcionário');
+      }
+
+      console.log('Created role for user');
+
+      // Create employee record
+      const { error: employeeError } = await supabase.from('employees').insert({
+        user_id: authData.user.id,
+        name: employeeData.name,
+        email: employeeData.email,
+        cpf: employeeData.employeeId,
+        monthly_limit: employeeData.monthlyLimit,
+        current_month_pickups: 0,
+        last_reset_month: new Date().toISOString().slice(0, 7)
+      });
+
+      if (employeeError) {
+        console.error('Error creating employee record:', employeeError);
+        throw new Error('Falha ao criar registro do funcionário');
+      }
+
+      console.log('Created employee record');
+
+      // If the signup auto-logged in the new user, restore admin session
+      if (currentSession) {
+        await supabase.auth.setSession({
+          access_token: currentSession.access_token,
+          refresh_token: currentSession.refresh_token,
         });
+      }
 
-        if (roleError) {
-          console.error('Error creating user role:', roleError);
-          throw new Error('Falha ao criar role do funcionário');
-        }
-
-        // Create employee record
-        const { error: employeeError } = await supabase.from('employees').insert({
-          user_id: authData.user.id,
-          name: employeeData.name,
-          email: employeeData.email,
-          cpf: employeeData.employeeId,
-          monthly_limit: employeeData.monthlyLimit,
-          current_month_pickups: 0,
-          last_reset_month: new Date().toISOString().slice(0, 7)
-        });
-
-        if (employeeError) {
-          console.error('Error creating employee record:', employeeError);
-          throw new Error('Falha ao criar registro do funcionário');
-        }
-
-        // Reload employees
-        const { data: employeesData } = await supabase.from('employees').select('*');
-        if (employeesData) {
-          const formattedEmployees = employeesData.map(emp => ({
-            id: emp.id,
-            name: emp.name,
-            email: emp.email,
-            employeeId: emp.cpf,
-            managerId: '',
-            department: employeeData.department || '',
-            monthlyLimit: emp.monthly_limit,
-            currentMonthPickups: emp.current_month_pickups,
-            lastResetMonth: emp.last_reset_month || ''
-          }));
-          setEmployees(formattedEmployees);
-        }
+      // Reload employees
+      const { data: employeesData } = await supabase.from('employees').select('*');
+      if (employeesData) {
+        const formattedEmployees = employeesData.map(emp => ({
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
+          employeeId: emp.cpf,
+          managerId: '',
+          department: employeeData.department || '',
+          monthlyLimit: emp.monthly_limit,
+          currentMonthPickups: emp.current_month_pickups,
+          lastResetMonth: emp.last_reset_month || ''
+        }));
+        setEmployees(formattedEmployees);
       }
     } catch (error) {
       console.error('Error adding employee:', error);
