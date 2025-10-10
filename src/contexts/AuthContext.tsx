@@ -185,6 +185,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'employee',
             employeeId: employeeData.id
           });
+
+          // Load all employees for the employee dashboard
+          const { data: allEmployeesData } = await supabase.from('employees').select('*');
+          if (allEmployeesData) {
+            const formattedEmployees = allEmployeesData.map(emp => ({
+              id: emp.id,
+              name: emp.name,
+              email: emp.email,
+              employeeId: emp.cpf,
+              managerId: '',
+              department: '',
+              monthlyLimit: emp.monthly_limit,
+              currentMonthPickups: emp.current_month_pickups,
+              lastResetMonth: emp.last_reset_month || ''
+            }));
+            setEmployees(formattedEmployees);
+          }
+
+          // Load stores for employee to schedule pickups
+          const { data: storesData } = await supabase.from('stores').select('*');
+          if (storesData) {
+            const formattedStores = storesData.map(store => ({
+              id: store.id,
+              name: store.name,
+              maxCapacity: store.max_daily_capacity,
+              location: store.address
+            }));
+            setStores(formattedStores);
+          }
         } else {
           console.error('No employee data found for user');
         }
