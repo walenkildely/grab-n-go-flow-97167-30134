@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import type { Employee, Store } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,8 +35,14 @@ const AdminDashboard: React.FC = () => {
     pickupSchedules, 
     storeCapacities,
     blockedDates,
-    addEmployee, 
-    addStore, 
+    addEmployee,
+    updateEmployee,
+    deleteEmployee,
+    resetEmployeePassword,
+    addStore,
+    updateStore,
+    deleteStore,
+    resetStorePassword,
     updateStoreMaxCapacity,
     updateStoreDateCapacity,
     blockDate,
@@ -68,6 +75,8 @@ const AdminDashboard: React.FC = () => {
   const [selectedDateRangeForBlock, setSelectedDateRangeForBlock] = useState<{ from: Date | undefined; to?: Date | undefined }>();
   const [tempSelectedDateRangeForBlock, setTempSelectedDateRangeForBlock] = useState<{ from: Date | undefined; to?: Date | undefined }>();
   const [blockReason, setBlockReason] = useState("");
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editingStoreData, setEditingStoreData] = useState<Store | null>(null);
 
   const handleAddEmployee = async () => {
     if (!newEmployee.name || !newEmployee.email || !newEmployee.employeeId) {
@@ -169,6 +178,84 @@ const AdminDashboard: React.FC = () => {
       title: "Capacidade atualizada!",
       description: "A capacidade da loja foi alterada com sucesso.",
     });
+  };
+
+  const handleUpdateEmployee = async () => {
+    if (!editingEmployee) return;
+
+    try {
+      await updateEmployee(editingEmployee.id, editingEmployee);
+      setEditingEmployee(null);
+      toast({
+        title: "Funcionário atualizado!",
+        description: "Os dados do funcionário foram atualizados com sucesso.",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao atualizar",
+        description: "Não foi possível atualizar o funcionário. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteEmployee = async (employeeId: string, name: string) => {
+    if (!confirm(`Tem certeza que deseja excluir ${name}? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    try {
+      await deleteEmployee(employeeId);
+      toast({
+        title: "Funcionário excluído!",
+        description: `${name} foi removido do sistema.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao excluir",
+        description: "Não foi possível excluir o funcionário. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateStoreData = async () => {
+    if (!editingStoreData) return;
+
+    try {
+      await updateStore(editingStoreData.id, editingStoreData);
+      setEditingStoreData(null);
+      toast({
+        title: "Loja atualizada!",
+        description: "Os dados da loja foram atualizados com sucesso.",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao atualizar",
+        description: "Não foi possível atualizar a loja. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteStore = async (storeId: string, name: string) => {
+    if (!confirm(`Tem certeza que deseja excluir ${name}? Esta ação não pode ser desfeita e todos os agendamentos relacionados serão perdidos.`)) {
+      return;
+    }
+
+    try {
+      await deleteStore(storeId);
+      toast({
+        title: "Loja excluída!",
+        description: `${name} foi removida do sistema.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao excluir",
+        description: "Não foi possível excluir a loja. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleUpdateDateCapacity = () => {
@@ -404,26 +491,83 @@ const AdminDashboard: React.FC = () => {
               <Card key={employee.id} className="bg-gradient-card">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-4 flex-1">
                       <div className="h-12 w-12 rounded-full bg-gradient-primary flex items-center justify-center">
                         <Users className="h-6 w-6 text-primary-foreground" />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className="font-semibold text-foreground">{employee.name}</h4>
                         <p className="text-sm text-muted-foreground">Mat: {employee.employeeId} | {employee.department}</p>
                         <p className="text-xs text-muted-foreground">{employee.email}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">
-                        Produtos: {employee.currentMonthPickups}/{employee.monthlyLimit}
-                      </p>
-                      <div className="w-32 bg-secondary h-2 rounded-full mt-1">
-                        <div 
-                          className="bg-primary h-2 rounded-full transition-all"
-                          style={{ width: `${(employee.currentMonthPickups / employee.monthlyLimit) * 100}%` }}
-                        />
+                    <div className="flex items-center gap-2">
+                      <div className="text-right mr-4">
+                        <p className="text-sm font-medium">
+                          Produtos: {employee.currentMonthPickups}/{employee.monthlyLimit}
+                        </p>
+                        <div className="w-32 bg-secondary h-2 rounded-full mt-1">
+                          <div 
+                            className="bg-primary h-2 rounded-full transition-all"
+                            style={{ width: `${(employee.currentMonthPickups / employee.monthlyLimit) * 100}%` }}
+                          />
+                        </div>
                       </div>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingEmployee(employee)}
+                          >
+                            Editar
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Editar Funcionário</DialogTitle>
+                          </DialogHeader>
+                          {editingEmployee && (
+                            <div className="space-y-4">
+                              <div>
+                                <Label>Nome</Label>
+                                <Input
+                                  value={editingEmployee.name}
+                                  onChange={(e) => setEditingEmployee({...editingEmployee, name: e.target.value})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Email</Label>
+                                <Input
+                                  type="email"
+                                  value={editingEmployee.email}
+                                  onChange={(e) => setEditingEmployee({...editingEmployee, email: e.target.value})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Limite Mensal</Label>
+                                <Input
+                                  type="number"
+                                  value={editingEmployee.monthlyLimit}
+                                  onChange={(e) => setEditingEmployee({...editingEmployee, monthlyLimit: parseInt(e.target.value)})}
+                                  min="1"
+                                  max="10"
+                                />
+                              </div>
+                              <Button onClick={handleUpdateEmployee} className="w-full">
+                                Salvar Alterações
+                              </Button>
+                            </div>
+                          )}
+                        </DialogContent>
+                      </Dialog>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeleteEmployee(employee.id, employee.name)}
+                      >
+                        Excluir
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -514,61 +658,115 @@ const AdminDashboard: React.FC = () => {
               <Card key={store.id} className="bg-gradient-card">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-4 flex-1">
                       <div className="h-12 w-12 rounded-full bg-gradient-primary flex items-center justify-center">
                         <Building2 className="h-6 w-6 text-primary-foreground" />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className="font-semibold text-foreground">{store.name}</h4>
                         <p className="text-sm text-muted-foreground">{store.location}</p>
                       </div>
                     </div>
-                     <div className="text-right flex flex-col gap-2">
-                       <div>
-                         <p className="text-sm font-medium">Capacidade Máxima</p>
-                         <p className="text-2xl font-bold text-primary">{store.maxCapacity}</p>
-                       </div>
-                       <Dialog>
-                         <DialogTrigger asChild>
-                           <Button 
-                             variant="outline" 
-                             size="sm"
-                             onClick={() => setEditingStore({id: store.id, maxCapacity: store.maxCapacity})}
-                           >
-                             Editar Capacidade
-                           </Button>
-                         </DialogTrigger>
-                         <DialogContent>
-                           <DialogHeader>
-                             <DialogTitle>Alterar Capacidade da Loja</DialogTitle>
-                           </DialogHeader>
-                           <div className="space-y-4">
-                             <p>Loja: <strong>{store.name}</strong></p>
-                             <div>
-                               <Label htmlFor="newCapacity">Nova Capacidade Diária</Label>
-                               <Input
-                                 id="newCapacity"
-                                 type="number"
-                                 value={editingStore?.maxCapacity || store.maxCapacity}
-                                 onChange={(e) => setEditingStore(prev => 
-                                   prev ? {...prev, maxCapacity: parseInt(e.target.value)} : null
-                                 )}
-                                 min="1"
-                                 max="50"
-                               />
-                             </div>
-                             <div className="flex justify-end gap-2">
-                               <Button variant="outline" onClick={() => setEditingStore(null)}>
-                                 Cancelar
-                               </Button>
-                               <Button onClick={handleUpdateStoreCapacity}>
-                                 Salvar
-                               </Button>
-                             </div>
-                           </div>
-                         </DialogContent>
-                       </Dialog>
-                     </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right mr-4">
+                        <p className="text-sm font-medium">Capacidade Máxima</p>
+                        <p className="text-2xl font-bold text-primary">{store.maxCapacity}</p>
+                      </div>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setEditingStore({id: store.id, maxCapacity: store.maxCapacity})}
+                          >
+                            Cap.
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Alterar Capacidade da Loja</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <p>Loja: <strong>{store.name}</strong></p>
+                            <div>
+                              <Label htmlFor="newCapacity">Nova Capacidade Diária</Label>
+                              <Input
+                                id="newCapacity"
+                                type="number"
+                                value={editingStore?.maxCapacity || store.maxCapacity}
+                                onChange={(e) => setEditingStore(prev => 
+                                  prev ? {...prev, maxCapacity: parseInt(e.target.value)} : null
+                                )}
+                                min="1"
+                                max="50"
+                              />
+                            </div>
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" onClick={() => setEditingStore(null)}>
+                                Cancelar
+                              </Button>
+                              <Button onClick={handleUpdateStoreCapacity}>
+                                Salvar
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingStoreData(store)}
+                          >
+                            Editar
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Editar Loja</DialogTitle>
+                          </DialogHeader>
+                          {editingStoreData && (
+                            <div className="space-y-4">
+                              <div>
+                                <Label>Nome da Loja</Label>
+                                <Input
+                                  value={editingStoreData.name}
+                                  onChange={(e) => setEditingStoreData({...editingStoreData, name: e.target.value})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Localização</Label>
+                                <Input
+                                  value={editingStoreData.location}
+                                  onChange={(e) => setEditingStoreData({...editingStoreData, location: e.target.value})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Capacidade Máxima</Label>
+                                <Input
+                                  type="number"
+                                  value={editingStoreData.maxCapacity}
+                                  onChange={(e) => setEditingStoreData({...editingStoreData, maxCapacity: parseInt(e.target.value)})}
+                                  min="1"
+                                  max="50"
+                                />
+                              </div>
+                              <Button onClick={handleUpdateStoreData} className="w-full">
+                                Salvar Alterações
+                              </Button>
+                            </div>
+                          )}
+                        </DialogContent>
+                      </Dialog>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeleteStore(store.id, store.name)}
+                      >
+                        Excluir
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

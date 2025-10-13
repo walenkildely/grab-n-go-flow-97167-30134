@@ -73,7 +73,13 @@ interface AuthContextType {
   signup: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   addEmployee: (employee: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => Promise<void>;
+  updateEmployee: (employeeId: string, updates: Partial<Employee>) => Promise<void>;
+  deleteEmployee: (employeeId: string) => Promise<void>;
+  resetEmployeePassword: (employeeId: string, newPassword: string) => Promise<void>;
   addStore: (store: Omit<Store, 'id'> & { email?: string; password?: string }) => Promise<void>;
+  updateStore: (storeId: string, updates: Partial<Store>) => Promise<void>;
+  deleteStore: (storeId: string) => Promise<void>;
+  resetStorePassword: (storeId: string, newPassword: string) => Promise<void>;
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => string;
   confirmPickup: (token: string) => boolean;
   cancelPickup: (token: string, reason: string) => boolean;
@@ -439,6 +445,200 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateEmployee = async (employeeId: string, updates: Partial<Employee>) => {
+    try {
+      // Update employee record in database
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({
+          name: updates.name,
+          email: updates.email,
+          cpf: updates.employeeId,
+          monthly_limit: updates.monthlyLimit
+        })
+        .eq('id', employeeId);
+
+      if (updateError) {
+        console.error('Error updating employee:', updateError);
+        throw new Error('Falha ao atualizar funcionário: ' + updateError.message);
+      }
+
+      // Reload employees
+      const { data: employeesData } = await supabase.from('employees').select('*');
+      if (employeesData) {
+        const formattedEmployees = employeesData.map(emp => ({
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
+          employeeId: emp.id,
+          managerId: '',
+          department: '',
+          monthlyLimit: emp.monthly_limit,
+          currentMonthPickups: emp.current_month_pickups,
+          lastResetMonth: emp.last_reset_month || ''
+        }));
+        setEmployees(formattedEmployees);
+      }
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      throw error;
+    }
+  };
+
+  const deleteEmployee = async (employeeId: string) => {
+    try {
+      // Get employee to find user_id
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('user_id')
+        .eq('id', employeeId)
+        .single();
+
+      if (!empData) {
+        throw new Error('Funcionário não encontrado');
+      }
+
+      // Delete employee record (this will cascade delete user via FK)
+      const { error: deleteError } = await supabase
+        .from('employees')
+        .delete()
+        .eq('id', employeeId);
+
+      if (deleteError) {
+        console.error('Error deleting employee:', deleteError);
+        throw new Error('Falha ao deletar funcionário: ' + deleteError.message);
+      }
+
+      // Reload employees
+      const { data: employeesData } = await supabase.from('employees').select('*');
+      if (employeesData) {
+        const formattedEmployees = employeesData.map(emp => ({
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
+          employeeId: emp.id,
+          managerId: '',
+          department: '',
+          monthlyLimit: emp.monthly_limit,
+          currentMonthPickups: emp.current_month_pickups,
+          lastResetMonth: emp.last_reset_month || ''
+        }));
+        setEmployees(formattedEmployees);
+      }
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      throw error;
+    }
+  };
+
+  const resetEmployeePassword = async (employeeId: string, newPassword: string) => {
+    try {
+      // Get employee user_id
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('user_id, email')
+        .eq('id', employeeId)
+        .single();
+
+      if (!empData || !empData.user_id) {
+        throw new Error('Funcionário não possui usuário associado');
+      }
+
+      // Note: Supabase doesn't allow direct password reset from client
+      // You would need an edge function with admin privileges for this
+      // For now, we'll throw an informative error
+      throw new Error('Reset de senha deve ser feito através de um link enviado por email. Use a função "Esqueci minha senha" no login.');
+    } catch (error) {
+      console.error('Error resetting employee password:', error);
+      throw error;
+    }
+  };
+
+  const updateStore = async (storeId: string, updates: Partial<Store>) => {
+    try {
+      // Update store record in database
+      const { error: updateError } = await supabase
+        .from('stores')
+        .update({
+          name: updates.name,
+          address: updates.location,
+          max_daily_capacity: updates.maxCapacity
+        })
+        .eq('id', storeId);
+
+      if (updateError) {
+        console.error('Error updating store:', updateError);
+        throw new Error('Falha ao atualizar loja: ' + updateError.message);
+      }
+
+      // Reload stores
+      const { data: storesData } = await supabase.from('stores').select('*');
+      if (storesData) {
+        const formattedStores = storesData.map(store => ({
+          id: store.id,
+          name: store.name,
+          maxCapacity: store.max_daily_capacity,
+          location: store.address
+        }));
+        setStores(formattedStores);
+      }
+    } catch (error) {
+      console.error('Error updating store:', error);
+      throw error;
+    }
+  };
+
+  const deleteStore = async (storeId: string) => {
+    try {
+      // Delete store record
+      const { error: deleteError } = await supabase
+        .from('stores')
+        .delete()
+        .eq('id', storeId);
+
+      if (deleteError) {
+        console.error('Error deleting store:', deleteError);
+        throw new Error('Falha ao deletar loja: ' + deleteError.message);
+      }
+
+      // Reload stores
+      const { data: storesData } = await supabase.from('stores').select('*');
+      if (storesData) {
+        const formattedStores = storesData.map(store => ({
+          id: store.id,
+          name: store.name,
+          maxCapacity: store.max_daily_capacity,
+          location: store.address
+        }));
+        setStores(formattedStores);
+      }
+    } catch (error) {
+      console.error('Error deleting store:', error);
+      throw error;
+    }
+  };
+
+  const resetStorePassword = async (storeId: string, newPassword: string) => {
+    try {
+      // Get store user_id
+      const { data: storeData } = await supabase
+        .from('stores')
+        .select('user_id')
+        .eq('id', storeId)
+        .single();
+
+      if (!storeData || !storeData.user_id) {
+        throw new Error('Loja não possui usuário associado');
+      }
+
+      // Note: Same limitation as employee password reset
+      throw new Error('Reset de senha deve ser feito através de um link enviado por email. Use a função "Esqueci minha senha" no login.');
+    } catch (error) {
+      console.error('Error resetting store password:', error);
+      throw error;
+    }
+  };
+
   const addStore = async (storeData: Omit<Store, 'id'> & { email?: string; password?: string }) => {
     try {
       let userId: string | null = null;
@@ -709,7 +909,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signup,
       logout,
       addEmployee,
+      updateEmployee,
+      deleteEmployee,
+      resetEmployeePassword,
       addStore,
+      updateStore,
+      deleteStore,
+      resetStorePassword,
       schedulePickup,
       confirmPickup,
       cancelPickup,
