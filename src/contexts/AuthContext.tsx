@@ -73,7 +73,7 @@ interface AuthContextType {
   signup: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   addEmployee: (employee: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => Promise<void>;
-  addStore: (store: Omit<Store, 'id'>) => void;
+  addStore: (store: Omit<Store, 'id'> & { email?: string; password?: string }) => Promise<void>;
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => string;
   confirmPickup: (token: string) => boolean;
   cancelPickup: (token: string, reason: string) => boolean;
@@ -439,15 +439,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addStore = (storeData: Omit<Store, 'id'>) => {
-    const newStore: Store = {
-      ...storeData,
-      id: Date.now().toString()
-    };
-    
-    const updatedStores = [...stores, newStore];
-    setStores(updatedStores);
-    localStorage.setItem('stores', JSON.stringify(updatedStores));
+  const addStore = async (storeData: Omit<Store, 'id'> & { email?: string; password?: string }) => {
+    try {
+      let userId: string | null = null;
+
+      // If email and password provided, create user account
+      if (storeData.email && storeData.password) {
+        console.log('Creating store user account...');
+        
+        // Create auth user
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({
+          email: storeData.email,
+          password: storeData.password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              full_name: storeData.name
+            }
+          }
+        });
+
+        if (signUpError) {
+          console.error('Error creating store user:', signUpError);
+          throw new Error('Falha ao criar usuário da loja: ' + signUpError.message);
+        }
+
+        userId = authData.user?.id || null;
+        console.log('Store user created:', userId);
+
+        // Create store role
+        if (userId) {
+          const { error: roleError } = await supabase.from('user_roles').insert({
+            user_id: userId,
+            role: 'store'
+          });
+
+          if (roleError) {
+            console.error('Error creating store role:', roleError);
+            throw new Error('Falha ao criar role da loja: ' + roleError.message);
+          }
+          console.log('Created role for store user');
+        }
+      }
+
+      // Create store record
+      const { error: storeError } = await supabase.from('stores').insert({
+        name: storeData.name,
+        address: storeData.location,
+        max_daily_capacity: storeData.maxCapacity,
+        user_id: userId
+      });
+
+      if (storeError) {
+        console.error('Error creating store record:', storeError);
+        throw new Error('Falha ao criar registro da loja: ' + storeError.message);
+      }
+
+      console.log('Created store record');
+
+      // Reload stores
+      const { data: storesData } = await supabase.from('stores').select('*');
+      if (storesData) {
+        const formattedStores = storesData.map(store => ({
+          id: store.id,
+          name: store.name,
+          maxCapacity: store.max_daily_capacity,
+          location: store.address
+        }));
+        setStores(formattedStores);
+      }
+    } catch (error) {
+      console.error('Error adding store:', error);
+      throw error;
+    }
   };
 
   const generateToken = (): string => {

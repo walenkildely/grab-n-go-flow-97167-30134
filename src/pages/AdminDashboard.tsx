@@ -55,7 +55,9 @@ const AdminDashboard: React.FC = () => {
   const [newStore, setNewStore] = useState({
     name: '',
     maxCapacity: 10,
-    location: ''
+    location: '',
+    email: '',
+    password: ''
   });
   const [editingStore, setEditingStore] = useState<{id: string, maxCapacity: number} | null>(null);
   const [editingDateCapacity, setEditingDateCapacity] = useState<{storeId: string, date: string, capacity: number} | null>(null);
@@ -101,7 +103,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleAddStore = () => {
+  const handleAddStore = async () => {
     if (!newStore.name || !newStore.location) {
       toast({
         title: "Campos obrigatórios",
@@ -111,17 +113,50 @@ const AdminDashboard: React.FC = () => {
       return;
     }
 
-    addStore(newStore);
-    setNewStore({
-      name: '',
-      maxCapacity: 10,
-      location: ''
-    });
-    
-    toast({
-      title: "Loja adicionada!",
-      description: `${newStore.name} foi cadastrada com sucesso.`,
-    });
+    // Validate email and password if provided
+    if (newStore.email && !newStore.password) {
+      toast({
+        title: "Senha necessária",
+        description: "Se você fornecer um email, precisa fornecer uma senha também.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newStore.password && !newStore.email) {
+      toast({
+        title: "Email necessário",
+        description: "Se você fornecer uma senha, precisa fornecer um email também.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await addStore(newStore);
+      setNewStore({
+        name: '',
+        maxCapacity: 10,
+        location: '',
+        email: '',
+        password: ''
+      });
+      
+      const successMessage = newStore.email 
+        ? `${newStore.name} foi cadastrada com sucesso com login: ${newStore.email}`
+        : `${newStore.name} foi cadastrada com sucesso (sem usuário de login).`;
+      
+      toast({
+        title: "Loja adicionada!",
+        description: successMessage,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao adicionar loja",
+        description: "Ocorreu um erro ao cadastrar a loja. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleUpdateStoreCapacity = () => {
@@ -440,6 +475,31 @@ const AdminDashboard: React.FC = () => {
                       min="1"
                       max="50"
                     />
+                  </div>
+                  <div className="border-t pt-4">
+                    <p className="text-sm text-muted-foreground mb-3">Criar usuário de login para a loja (opcional)</p>
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="storeEmail">Email da Loja</Label>
+                        <Input
+                          id="storeEmail"
+                          type="email"
+                          value={newStore.email}
+                          onChange={(e) => setNewStore({...newStore, email: e.target.value})}
+                          placeholder="loja@empresa.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="storePassword">Senha</Label>
+                        <Input
+                          id="storePassword"
+                          type="password"
+                          value={newStore.password}
+                          onChange={(e) => setNewStore({...newStore, password: e.target.value})}
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <Button onClick={handleAddStore} className="w-full bg-gradient-primary">
                     Cadastrar Loja
