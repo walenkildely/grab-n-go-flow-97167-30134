@@ -193,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: emp.id,
               name: emp.name,
               email: emp.email,
-              employeeId: emp.cpf,
+              employeeId: emp.id, // Use UUID instead of CPF
               managerId: '',
               department: '',
               monthlyLimit: emp.monthly_limit,
