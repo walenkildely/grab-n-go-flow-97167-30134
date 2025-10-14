@@ -348,80 +348,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
     try {
-      // Get current admin session
-      const { data: { session: adminSession } } = await supabase.auth.getSession();
-      
-      if (!adminSession) {
-        throw new Error('Admin não está autenticado');
-      }
-
-      console.log('Admin session:', adminSession.user.id);
-      
-      // Create user with default password "123456"
-      const { data: authData, error: signupError } = await supabase.auth.signUp({
-        email: employeeData.email,
-        password: '123456',
-        options: {
-          data: {
-            full_name: employeeData.name
-          },
-          emailRedirectTo: `${window.location.origin}/`
+      // Call edge function to create user without affecting admin session
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: employeeData.email,
+          password: '123456',
+          full_name: employeeData.name,
+          role: 'employee',
+          metadata: {
+            name: employeeData.name,
+            email: employeeData.email,
+            cpf: employeeData.employeeId,
+            monthly_limit: employeeData.monthlyLimit
+          }
         }
       });
 
-      if (signupError) {
-        console.error('Signup error:', signupError);
-        throw signupError;
+      if (error) {
+        console.error('Error creating employee:', error);
+        throw new Error('Falha ao criar funcionário: ' + error.message);
       }
 
-      if (!authData.user) {
-        throw new Error('Falha ao criar usuário');
-      }
-
-      const newUserId = authData.user.id;
-      console.log('Created user:', newUserId);
-
-      // Wait a bit to ensure user is created
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Restore admin session immediately
-      await supabase.auth.setSession({
-        access_token: adminSession.access_token,
-        refresh_token: adminSession.refresh_token,
-      });
-
-      console.log('Admin session restored');
-
-      // Create role entry for employee (as admin)
-      const { error: roleError } = await supabase.from('user_roles').insert({
-        user_id: newUserId,
-        role: 'employee'
-      });
-
-      if (roleError) {
-        console.error('Error creating user role:', roleError);
-        throw new Error('Falha ao criar role do funcionário: ' + roleError.message);
-      }
-
-      console.log('Created role for user');
-
-      // Create employee record (as admin)
-      const { error: employeeError } = await supabase.from('employees').insert({
-        user_id: newUserId,
-        name: employeeData.name,
-        email: employeeData.email,
-        cpf: employeeData.employeeId,
-        monthly_limit: employeeData.monthlyLimit,
-        current_month_pickups: 0,
-        last_reset_month: new Date().toISOString().slice(0, 7)
-      });
-
-      if (employeeError) {
-        console.error('Error creating employee record:', employeeError);
-        throw new Error('Falha ao criar registro do funcionário: ' + employeeError.message);
-      }
-
-      console.log('Created employee record');
+      console.log('Employee created successfully:', data);
 
       // Reload employees
       const { data: employeesData } = await supabase.from('employees').select('*');
@@ -641,61 +589,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addStore = async (storeData: Omit<Store, 'id'> & { email?: string; password?: string }) => {
     try {
-      let userId: string | null = null;
-
-      // If email and password provided, create user account
+      // If email and password provided, create user account via edge function
       if (storeData.email && storeData.password) {
-        console.log('Creating store user account...');
-        
-        // Create auth user
-        const { data: authData, error: signUpError } = await supabase.auth.signUp({
-          email: storeData.email,
-          password: storeData.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: {
-              full_name: storeData.name
+        const { data, error } = await supabase.functions.invoke('create-user', {
+          body: {
+            email: storeData.email,
+            password: storeData.password,
+            full_name: storeData.name,
+            role: 'store',
+            metadata: {
+              name: storeData.name,
+              address: storeData.location,
+              max_daily_capacity: storeData.maxCapacity
             }
           }
         });
 
-        if (signUpError) {
-          console.error('Error creating store user:', signUpError);
-          throw new Error('Falha ao criar usuário da loja: ' + signUpError.message);
+        if (error) {
+          console.error('Error creating store:', error);
+          throw new Error('Falha ao criar loja: ' + error.message);
         }
 
-        userId = authData.user?.id || null;
-        console.log('Store user created:', userId);
+        console.log('Store created successfully:', data);
+      } else {
+        // Create store without user
+        const { error: storeError } = await supabase.from('stores').insert({
+          name: storeData.name,
+          address: storeData.location,
+          max_daily_capacity: storeData.maxCapacity
+        });
 
-        // Create store role
-        if (userId) {
-          const { error: roleError } = await supabase.from('user_roles').insert({
-            user_id: userId,
-            role: 'store'
-          });
-
-          if (roleError) {
-            console.error('Error creating store role:', roleError);
-            throw new Error('Falha ao criar role da loja: ' + roleError.message);
-          }
-          console.log('Created role for store user');
+        if (storeError) {
+          console.error('Error creating store record:', storeError);
+          throw new Error('Falha ao criar registro da loja: ' + storeError.message);
         }
+
+        console.log('Created store record');
       }
-
-      // Create store record
-      const { error: storeError } = await supabase.from('stores').insert({
-        name: storeData.name,
-        address: storeData.location,
-        max_daily_capacity: storeData.maxCapacity,
-        user_id: userId
-      });
-
-      if (storeError) {
-        console.error('Error creating store record:', storeError);
-        throw new Error('Falha ao criar registro da loja: ' + storeError.message);
-      }
-
-      console.log('Created store record');
 
       // Reload stores
       const { data: storesData } = await supabase.from('stores').select('*');
