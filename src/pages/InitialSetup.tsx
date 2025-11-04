@@ -40,7 +40,7 @@ const InitialSetup = () => {
       }
 
       // 2. Add admin role
-      const { error: roleError } = await supabase
+      const { error: roleError } = await (supabase as any)
         .from('user_roles')
         .insert({
           user_id: signUpData.user.id,

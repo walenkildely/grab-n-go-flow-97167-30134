@@ -137,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Loading user data for:', userId);
       
       // Get user roles
-      const { data: rolesData, error: rolesError } = await supabase
+      const { data: rolesData, error: rolesError } = await (supabase as any)
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
@@ -153,11 +153,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      const role = rolesData.role as UserRole;
+      const role = (rolesData as any).role as UserRole;
       console.log('User role:', role);
 
       // Get profile data
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData, error: profileError } = await (supabase as any)
         .from('profiles')
         .select('*')
         .eq('id', userId)
@@ -173,9 +173,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // Load pickup schedules from database
+      const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+      if (pickupsData) {
+        const formattedPickups = pickupsData.map((pickup: any) => ({
+          id: pickup.id,
+          employeeId: pickup.employee_id,
+          storeId: pickup.store_id,
+          date: pickup.scheduled_date,
+          quantity: pickup.quantity,
+          observations: '',
+          token: pickup.token,
+          status: pickup.status as 'scheduled' | 'completed' | 'cancelled',
+          createdAt: pickup.created_at,
+          completedAt: pickup.completed_at || undefined,
+          cancelledAt: pickup.cancelled_at || undefined,
+          cancellationReason: pickup.cancellation_reason || undefined
+        }));
+        setPickupSchedules(formattedPickups);
+      }
+
       // Based on role, load additional data
       if (role === 'employee') {
-        const { data: employeeData, error: employeeError } = await supabase
+        const { data: employeeData, error: employeeError } = await (supabase as any)
           .from('employees')
           .select('*')
           .eq('user_id', userId)
@@ -193,7 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
           // Load all employees for the employee dashboard
-          const { data: allEmployeesData } = await supabase.from('employees').select('*');
+          const { data: allEmployeesData } = await (supabase as any).from('employees').select('*');
           if (allEmployeesData) {
             const formattedEmployees = allEmployeesData.map(emp => ({
               id: emp.id,
@@ -210,7 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           // Load stores for employee to schedule pickups
-          const { data: storesData } = await supabase.from('stores').select('*');
+          const { data: storesData } = await (supabase as any).from('stores').select('*');
           if (storesData) {
             const formattedStores = storesData.map(store => ({
               id: store.id,
@@ -224,7 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('No employee data found for user');
         }
       } else if (role === 'store') {
-        const { data: storeData } = await supabase
+        const { data: storeData } = await (supabase as any)
           .from('stores')
           .select('*')
           .eq('user_id', userId)
@@ -238,6 +258,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'store',
             storeId: storeData.id
           });
+
+          // Load all employees for store dashboard
+          const { data: allEmployeesData } = await (supabase as any).from('employees').select('*');
+          if (allEmployeesData) {
+            const formattedEmployees = allEmployeesData.map(emp => ({
+              id: emp.id,
+              name: emp.name,
+              email: emp.email,
+              employeeId: emp.id,
+              managerId: '',
+              department: '',
+              monthlyLimit: emp.monthly_limit,
+              currentMonthPickups: emp.current_month_pickups,
+              lastResetMonth: emp.last_reset_month || ''
+            }));
+            setEmployees(formattedEmployees);
+          }
         }
       } else if (role === 'admin') {
         setUser({
@@ -246,6 +283,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: profileData.email,
           role: 'admin'
         });
+
+        // Load all employees for admin dashboard
+        const { data: allEmployeesData } = await (supabase as any).from('employees').select('*');
+        if (allEmployeesData) {
+          const formattedEmployees = allEmployeesData.map(emp => ({
+            id: emp.id,
+            name: emp.name,
+            email: emp.email,
+            employeeId: emp.id,
+            managerId: '',
+            department: '',
+            monthlyLimit: emp.monthly_limit,
+            currentMonthPickups: emp.current_month_pickups,
+            lastResetMonth: emp.last_reset_month || ''
+          }));
+          setEmployees(formattedEmployees);
+        }
+
+        // Load all stores for admin dashboard
+        const { data: storesData } = await (supabase as any).from('stores').select('*');
+        if (storesData) {
+          const formattedStores = storesData.map(store => ({
+            id: store.id,
+            name: store.name,
+            maxCapacity: store.max_daily_capacity,
+            location: store.address
+          }));
+          setStores(formattedStores);
+        }
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -253,12 +319,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loadBlockedDates = async () => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('blocked_dates')
       .select('*');
     
     if (data) {
-      setBlockedDates(data.map(d => ({ date: d.date, reason: d.reason || undefined })));
+      setBlockedDates(data.map((d: any) => ({ date: d.date, reason: d.reason || undefined })));
     }
   };
 
@@ -328,7 +394,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.user) {
         // Create role entry
-        await supabase.from('user_roles').insert({
+        await (supabase as any).from('user_roles').insert({
           user_id: data.user.id,
           role: role
         });
@@ -372,9 +438,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Employee created successfully:', data);
 
       // Reload employees
-      const { data: employeesData } = await supabase.from('employees').select('*');
+      const { data: employeesData } = await (supabase as any).from('employees').select('*');
       if (employeesData) {
-        const formattedEmployees = employeesData.map(emp => ({
+        const formattedEmployees = employeesData.map((emp: any) => ({
           id: emp.id,
           name: emp.name,
           email: emp.email,
@@ -396,7 +462,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateEmployee = async (employeeId: string, updates: Partial<Employee>) => {
     try {
       // Update employee record in database
-      const { error: updateError } = await supabase
+      const { error: updateError } = await (supabase as any)
         .from('employees')
         .update({
           name: updates.name,
@@ -412,9 +478,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Reload employees
-      const { data: employeesData } = await supabase.from('employees').select('*');
+      const { data: employeesData } = await (supabase as any).from('employees').select('*');
       if (employeesData) {
-        const formattedEmployees = employeesData.map(emp => ({
+        const formattedEmployees = employeesData.map((emp: any) => ({
           id: emp.id,
           name: emp.name,
           email: emp.email,
@@ -436,7 +502,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteEmployee = async (employeeId: string) => {
     try {
       // Get employee to find user_id
-      const { data: empData } = await supabase
+      const { data: empData } = await (supabase as any)
         .from('employees')
         .select('user_id')
         .eq('id', employeeId)
@@ -447,7 +513,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Delete employee record (this will cascade delete user via FK)
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await (supabase as any)
         .from('employees')
         .delete()
         .eq('id', employeeId);
@@ -458,9 +524,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Reload employees
-      const { data: employeesData } = await supabase.from('employees').select('*');
+      const { data: employeesData } = await (supabase as any).from('employees').select('*');
       if (employeesData) {
-        const formattedEmployees = employeesData.map(emp => ({
+        const formattedEmployees = employeesData.map((emp: any) => ({
           id: emp.id,
           name: emp.name,
           email: emp.email,
@@ -482,7 +548,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetEmployeePassword = async (employeeId: string, newPassword: string) => {
     try {
       // Get employee user_id
-      const { data: empData } = await supabase
+      const { data: empData } = await (supabase as any)
         .from('employees')
         .select('user_id, email')
         .eq('id', employeeId)
@@ -505,7 +571,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateStore = async (storeId: string, updates: Partial<Store>) => {
     try {
       // Update store record in database
-      const { error: updateError } = await supabase
+      const { error: updateError } = await (supabase as any)
         .from('stores')
         .update({
           name: updates.name,
@@ -520,9 +586,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Reload stores
-      const { data: storesData } = await supabase.from('stores').select('*');
+      const { data: storesData } = await (supabase as any).from('stores').select('*');
       if (storesData) {
-        const formattedStores = storesData.map(store => ({
+        const formattedStores = storesData.map((store: any) => ({
           id: store.id,
           name: store.name,
           maxCapacity: store.max_daily_capacity,
@@ -539,7 +605,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteStore = async (storeId: string) => {
     try {
       // Delete store record
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await (supabase as any)
         .from('stores')
         .delete()
         .eq('id', storeId);
@@ -550,9 +616,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Reload stores
-      const { data: storesData } = await supabase.from('stores').select('*');
+      const { data: storesData } = await (supabase as any).from('stores').select('*');
       if (storesData) {
-        const formattedStores = storesData.map(store => ({
+        const formattedStores = storesData.map((store: any) => ({
           id: store.id,
           name: store.name,
           maxCapacity: store.max_daily_capacity,
@@ -569,7 +635,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetStorePassword = async (storeId: string, newPassword: string) => {
     try {
       // Get store user_id
-      const { data: storeData } = await supabase
+      const { data: storeData } = await (supabase as any)
         .from('stores')
         .select('user_id')
         .eq('id', storeId)
@@ -613,7 +679,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('Store created successfully:', data);
       } else {
         // Create store without user
-        const { error: storeError } = await supabase.from('stores').insert({
+        const { error: storeError } = await (supabase as any).from('stores').insert({
           name: storeData.name,
           address: storeData.location,
           max_daily_capacity: storeData.maxCapacity
@@ -628,9 +694,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Reload stores
-      const { data: storesData } = await supabase.from('stores').select('*');
+      const { data: storesData } = await (supabase as any).from('stores').select('*');
       if (storesData) {
-        const formattedStores = storesData.map(store => ({
+        const formattedStores = storesData.map((store: any) => ({
           id: store.id,
           name: store.name,
           maxCapacity: store.max_daily_capacity,
@@ -688,59 +754,112 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const schedulePickup = (pickupData: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>): string => {
     const token = generateToken();
-    const newPickup: PickupSchedule = {
-      ...pickupData,
-      id: Date.now().toString(),
-      token,
-      status: 'scheduled',
-      createdAt: new Date().toISOString()
-    };
     
-    const updatedPickups = [...pickupSchedules, newPickup];
-    setPickupSchedules(updatedPickups);
-    localStorage.setItem('pickupSchedules', JSON.stringify(updatedPickups));
-    
-    // Update store capacity
-    updateStoreCapacity(pickupData.storeId, pickupData.date, 1);
-    
-    // Reduce employee available quantity immediately when scheduled
+    // Save to database
+    ((supabase as any).from('pickup_schedules').insert({
+      employee_id: pickupData.employeeId,
+      store_id: pickupData.storeId,
+      scheduled_date: pickupData.date,
+      quantity: pickupData.quantity,
+      token: token,
+      status: 'pending'
+    }) as any).then(({ data, error }: any) => {
+      if (error) {
+        console.error('Error saving pickup:', error);
+      } else {
+        // Reload pickups after successful save
+        loadUserData(user?.id || '');
+      }
+    });
+
+    // Update employee pickup count in database
     updateEmployeePickupCount(pickupData.employeeId, pickupData.quantity);
     
     return token;
   };
 
   const confirmPickup = (token: string): boolean => {
-    const pickup = pickupSchedules.find(p => p.token === token && p.status === 'scheduled');
+    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
     if (pickup) {
+      // Update in database
+      ((supabase as any).from('pickup_schedules')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('token', token) as any)
+        .then(({ error }: any) => {
+          if (error) {
+            console.error('Error confirming pickup:', error);
+          } else {
+            // Reload data to reflect changes
+            loadUserData(user?.id || '');
+          }
+        });
+
+      // Update local state immediately for UI responsiveness
       const updatedPickups = pickupSchedules.map(p => 
         p.token === token 
           ? { ...p, status: 'completed' as const, completedAt: new Date().toISOString() }
           : p
       );
-      
       setPickupSchedules(updatedPickups);
-      localStorage.setItem('pickupSchedules', JSON.stringify(updatedPickups));
       
-      // Employee quantity was already updated during scheduling, no need to update again
       return true;
     }
     return false;
   };
 
   const updateEmployeePickupCount = (employeeId: string, quantity: number) => {
-    const updatedEmployees = employees.map(emp => 
-      emp.employeeId === employeeId 
-        ? { ...emp, currentMonthPickups: emp.currentMonthPickups + quantity }
-        : emp
-    );
-    
-    setEmployees(updatedEmployees);
-    localStorage.setItem('employees', JSON.stringify(updatedEmployees));
+    // Update in database
+    const employee = employees.find(emp => emp.employeeId === employeeId);
+    if (employee) {
+      const newCount = employee.currentMonthPickups + quantity;
+      ((supabase as any).from('employees')
+        .update({ 
+          current_month_pickups: newCount
+        })
+        .eq('id', employeeId) as any)
+        .then(({ error }: any) => {
+          if (error) {
+            console.error('Error updating employee pickup count:', error);
+          } else {
+            // Reload employees to reflect changes
+            loadUserData(user?.id || '');
+          }
+        });
+
+      // Update local state immediately for UI responsiveness
+      const updatedEmployees = employees.map(emp => 
+        emp.employeeId === employeeId 
+          ? { ...emp, currentMonthPickups: newCount }
+          : emp
+      );
+      setEmployees(updatedEmployees);
+    }
   };
 
   const cancelPickup = (token: string, reason: string): boolean => {
-    const pickup = pickupSchedules.find(p => p.token === token && p.status === 'scheduled');
+    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
     if (pickup) {
+      // Update in database
+      ((supabase as any).from('pickup_schedules')
+        .update({ 
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: reason
+        })
+        .eq('token', token) as any)
+        .then(({ error }: any) => {
+          if (error) {
+            console.error('Error cancelling pickup:', error);
+          } else {
+            // Reload data to reflect changes
+            loadUserData(user?.id || '');
+          }
+        });
+
+      // Update local state immediately
       const updatedPickups = pickupSchedules.map(p => 
         p.token === token 
           ? { 
@@ -751,21 +870,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           : p
       );
-      
       setPickupSchedules(updatedPickups);
-      localStorage.setItem('pickupSchedules', JSON.stringify(updatedPickups));
-      
-      // Release store capacity
-      updateStoreCapacity(pickup.storeId, pickup.date, -1);
       
       // Restore employee available quantity
       updateEmployeePickupCount(pickup.employeeId, -pickup.quantity);
-      
-      // Show notification to employee (in real app, this would be an email/push notification)
-      const employee = employees.find(e => e.employeeId === pickup.employeeId);
-      if (employee) {
-        alert(`Retirada cancelada para ${employee.name}. Motivo: ${reason}`);
-      }
       
       return true;
     }
@@ -812,12 +920,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const blockDate = async (date: string, reason?: string) => {
-    await supabase.from('blocked_dates').insert({ date, reason });
+    await (supabase as any).from('blocked_dates').insert({ date, reason });
     loadBlockedDates();
   };
 
   const unblockDate = async (date: string) => {
-    await supabase.from('blocked_dates').delete().eq('date', date);
+    await (supabase as any).from('blocked_dates').delete().eq('date', date);
     loadBlockedDates();
   };
 
