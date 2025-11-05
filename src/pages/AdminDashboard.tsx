@@ -104,9 +104,10 @@ const AdminDashboard: React.FC = () => {
         description: `${newEmployee.name} foi cadastrado com sucesso. Senha padrão: 123456`,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro ao cadastrar o funcionário';
       toast({
         title: "Erro ao adicionar funcionário",
-        description: "Ocorreu um erro ao cadastrar o funcionário. Tente novamente.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -160,9 +161,10 @@ const AdminDashboard: React.FC = () => {
         description: successMessage,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro ao cadastrar a loja';
       toast({
         title: "Erro ao adicionar loja",
-        description: "Ocorreu um erro ao cadastrar a loja. Tente novamente.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
