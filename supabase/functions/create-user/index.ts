@@ -11,6 +11,8 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let createdUserId: string | null = null;
+  
   try {
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -43,6 +45,8 @@ serve(async (req) => {
       throw new Error('Failed to create user')
     }
 
+    createdUserId = userData.user.id;
+
     // Create role entry
     const { error: roleError } = await supabaseAdmin
       .from('user_roles')
@@ -52,7 +56,10 @@ serve(async (req) => {
       })
 
     if (roleError) {
-      throw roleError
+      console.error('Error creating role:', roleError)
+      // Rollback: delete the user
+      await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+      throw new Error('Falha ao criar role do usuário')
     }
 
     // Create employee or store record based on role
@@ -70,7 +77,10 @@ serve(async (req) => {
         })
 
       if (employeeError) {
-        throw employeeError
+        console.error('Error creating employee:', employeeError)
+        // Rollback: delete the user
+        await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+        throw new Error('Falha ao criar registro do funcionário')
       }
     } else if (role === 'store' && metadata) {
       const { error: storeError } = await supabaseAdmin
@@ -83,7 +93,10 @@ serve(async (req) => {
         })
 
       if (storeError) {
-        throw storeError
+        console.error('Error creating store:', storeError)
+        // Rollback: delete the user
+        await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+        throw new Error('Falha ao criar registro da loja')
       }
     }
 
