@@ -432,7 +432,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Error creating employee:', error);
-        throw new Error('Falha ao criar funcionário: ' + error.message);
+        const errorMessage = error.message || JSON.stringify(error);
+        
+        if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
+          throw new Error('Já existe um usuário cadastrado com este email');
+        }
+        
+        throw new Error('Falha ao criar funcionário: ' + errorMessage);
       }
 
       console.log('Employee created successfully:', data);
@@ -673,7 +679,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           console.error('Error creating store:', error);
-          throw new Error('Falha ao criar loja: ' + error.message);
+          const errorMessage = error.message || JSON.stringify(error);
+          
+          if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
+            throw new Error('Já existe um usuário cadastrado com este email');
+          }
+          
+          throw new Error('Falha ao criar loja: ' + errorMessage);
         }
 
         console.log('Store created successfully:', data);

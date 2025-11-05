@@ -94,9 +94,27 @@ serve(async (req) => {
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    
+    // Check for specific error types
+    let status = 400
+    let userMessage = errorMessage
+    
+    if (errorMessage.includes('email address has already been registered') || errorMessage.includes('User already registered')) {
+      status = 409
+      userMessage = 'Já existe um usuário cadastrado com este email'
+    }
+    
+    console.error('Error in create-user function:', errorMessage)
+    
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      JSON.stringify({ 
+        error: userMessage,
+        details: errorMessage 
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+        status 
+      }
     )
   }
 })
