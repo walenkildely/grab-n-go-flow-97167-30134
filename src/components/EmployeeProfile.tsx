@@ -7,7 +7,16 @@ import { User, Building2, Shield, Package, Calendar, CheckCircle } from 'lucide-
 export function EmployeeProfile() {
   const { user, employees } = useAuth();
   
-  const currentEmployee = employees.find(emp => emp.employeeId === user?.employeeId);
+  console.log('EmployeeProfile - user:', user);
+  console.log('EmployeeProfile - employees:', employees);
+  console.log('EmployeeProfile - searching for employeeId:', user?.employeeId);
+  
+  const currentEmployee = employees.find(emp => {
+    console.log('Comparing emp.id:', emp.id, 'with user.employeeId:', user?.employeeId);
+    return emp.id === user?.employeeId;
+  });
+  
+  console.log('EmployeeProfile - currentEmployee found:', currentEmployee);
   const remainingPickups = currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0;
 
   const getRoleIcon = () => {
