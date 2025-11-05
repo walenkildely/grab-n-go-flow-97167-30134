@@ -41,7 +41,7 @@ export interface PickupSchedule {
   quantity: number;
   observations: string;
   token: string;
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'completed' | 'cancelled' | 'pending';
   createdAt: string;
   completedAt?: string;
   cancelledAt?: string;
@@ -518,7 +518,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Funcionário não encontrado');
       }
 
-      // Delete employee record (this will cascade delete user via FK)
+      const userId = empData.user_id;
+
+      // Delete all pickup_schedules for this employee
+      await (supabase as any)
+        .from('pickup_schedules')
+        .delete()
+        .eq('employee_id', employeeId);
+
+      // Delete employee record
       const { error: deleteError } = await (supabase as any)
         .from('employees')
         .delete()
@@ -527,6 +535,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (deleteError) {
         console.error('Error deleting employee:', deleteError);
         throw new Error('Falha ao deletar funcionário: ' + deleteError.message);
+      }
+
+      // Delete user_roles
+      await (supabase as any)
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId);
+
+      // Delete from auth.users using admin API
+      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+      
+      if (authError) {
+        console.error('Error deleting auth user:', authError);
       }
 
       // Reload employees
@@ -610,6 +631,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteStore = async (storeId: string) => {
     try {
+      // Get store user_id
+      const { data: storeData } = await (supabase as any)
+        .from('stores')
+        .select('user_id')
+        .eq('id', storeId)
+        .single();
+
+      if (!storeData) {
+        throw new Error('Loja não encontrada');
+      }
+
+      const userId = storeData.user_id;
+
+      // Delete all pickup_schedules for this store
+      await (supabase as any)
+        .from('pickup_schedules')
+        .delete()
+        .eq('store_id', storeId);
+
+      // Delete all store_capacities for this store
+      await (supabase as any)
+        .from('store_capacities')
+        .delete()
+        .eq('store_id', storeId);
+
       // Delete store record
       const { error: deleteError } = await (supabase as any)
         .from('stores')
@@ -619,6 +665,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (deleteError) {
         console.error('Error deleting store:', deleteError);
         throw new Error('Falha ao deletar loja: ' + deleteError.message);
+      }
+
+      // If store has user, delete user_roles and auth user
+      if (userId) {
+        await (supabase as any)
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId);
+
+        const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+        
+        if (authError) {
+          console.error('Error deleting auth user:', authError);
+        }
       }
 
       // Reload stores
@@ -723,7 +783,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const generateToken = (): string => {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
   const getAvailableCapacity = (storeId: string, date: string): number => {
@@ -767,6 +827,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const schedulePickup = (pickupData: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>): string => {
     const token = generateToken();
     
+    // Create local pickup immediately for UI responsiveness
+    const newPickup: PickupSchedule = {
+      ...pickupData,
+      id: Date.now().toString(),
+      token,
+      status: 'pending' as const,
+      createdAt: new Date().toISOString()
+    };
+    
+    setPickupSchedules(prev => [...prev, newPickup]);
+    
     // Save to database
     ((supabase as any).from('pickup_schedules').insert({
       employee_id: pickupData.employeeId,
@@ -778,9 +849,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }) as any).then(({ data, error }: any) => {
       if (error) {
         console.error('Error saving pickup:', error);
+        // Remove from local state if save failed
+        setPickupSchedules(prev => prev.filter(p => p.token !== token));
       } else {
-        // Reload pickups after successful save
-        loadUserData(user?.id || '');
+        console.log('Pickup saved successfully');
       }
     });
 
