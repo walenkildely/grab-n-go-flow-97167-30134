@@ -832,11 +832,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...pickupData,
       id: Date.now().toString(),
       token,
-      status: 'pending' as const,
+      status: 'scheduled' as const,
       createdAt: new Date().toISOString()
     };
     
     setPickupSchedules(prev => [...prev, newPickup]);
+    
+    // Update employee pickup count immediately for UI
+    updateEmployeePickupCount(pickupData.employeeId, pickupData.quantity);
     
     // Save to database
     ((supabase as any).from('pickup_schedules').insert({
@@ -845,19 +848,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scheduled_date: pickupData.date,
       quantity: pickupData.quantity,
       token: token,
-      status: 'pending'
-    }) as any).then(({ data, error }: any) => {
+      status: 'scheduled'
+    }) as any).then(async ({ data, error }: any) => {
       if (error) {
         console.error('Error saving pickup:', error);
-        // Remove from local state if save failed
+        // Remove from local state and revert employee count if save failed
         setPickupSchedules(prev => prev.filter(p => p.token !== token));
+        updateEmployeePickupCount(pickupData.employeeId, -pickupData.quantity);
       } else {
         console.log('Pickup saved successfully');
+        // Reload pickups to get the correct ID from database
+        const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+        if (pickupsData) {
+          const formattedPickups = pickupsData.map((p: any) => ({
+            id: p.id,
+            employeeId: p.employee_id,
+            storeId: p.store_id,
+            date: p.scheduled_date,
+            quantity: p.quantity,
+            observations: '',
+            token: p.token,
+            status: p.status as 'scheduled' | 'completed' | 'cancelled',
+            createdAt: p.created_at,
+            completedAt: p.completed_at || undefined,
+            cancelledAt: p.cancelled_at || undefined,
+            cancellationReason: p.cancellation_reason || undefined
+          }));
+          setPickupSchedules(formattedPickups);
+        }
       }
     });
-
-    // Update employee pickup count in database
-    updateEmployeePickupCount(pickupData.employeeId, pickupData.quantity);
     
     return token;
   };
@@ -865,22 +885,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const confirmPickup = (token: string): boolean => {
     const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
     if (pickup) {
-      // Update in database
-      ((supabase as any).from('pickup_schedules')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('token', token) as any)
-        .then(({ error }: any) => {
-          if (error) {
-            console.error('Error confirming pickup:', error);
-          } else {
-            // Reload data to reflect changes
-            loadUserData(user?.id || '');
-          }
-        });
-
       // Update local state immediately for UI responsiveness
       const updatedPickups = pickupSchedules.map(p => 
         p.token === token 
@@ -888,6 +892,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : p
       );
       setPickupSchedules(updatedPickups);
+
+      // Update in database
+      ((supabase as any).from('pickup_schedules')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('token', token) as any)
+        .then(async ({ error }: any) => {
+          if (error) {
+            console.error('Error confirming pickup:', error);
+            // Revert on error
+            setPickupSchedules(pickupSchedules);
+          } else {
+            // Reload pickups to ensure consistency
+            const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+            if (pickupsData) {
+              const formattedPickups = pickupsData.map((p: any) => ({
+                id: p.id,
+                employeeId: p.employee_id,
+                storeId: p.store_id,
+                date: p.scheduled_date,
+                quantity: p.quantity,
+                observations: '',
+                token: p.token,
+                status: p.status as 'scheduled' | 'completed' | 'cancelled',
+                createdAt: p.created_at,
+                completedAt: p.completed_at || undefined,
+                cancelledAt: p.cancelled_at || undefined,
+                cancellationReason: p.cancellation_reason || undefined
+              }));
+              setPickupSchedules(formattedPickups);
+            }
+          }
+        });
       
       return true;
     }
@@ -899,20 +938,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const employee = employees.find(emp => emp.employeeId === employeeId);
     if (employee) {
       const newCount = employee.currentMonthPickups + quantity;
-      ((supabase as any).from('employees')
-        .update({ 
-          current_month_pickups: newCount
-        })
-        .eq('id', employeeId) as any)
-        .then(({ error }: any) => {
-          if (error) {
-            console.error('Error updating employee pickup count:', error);
-          } else {
-            // Reload employees to reflect changes
-            loadUserData(user?.id || '');
-          }
-        });
-
+      
       // Update local state immediately for UI responsiveness
       const updatedEmployees = employees.map(emp => 
         emp.employeeId === employeeId 
@@ -920,29 +946,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : emp
       );
       setEmployees(updatedEmployees);
+
+      // Update in database
+      ((supabase as any).from('employees')
+        .update({ 
+          current_month_pickups: newCount
+        })
+        .eq('id', employeeId) as any)
+        .then(async ({ error }: any) => {
+          if (error) {
+            console.error('Error updating employee pickup count:', error);
+            // Revert local state on error
+            setEmployees(employees);
+          } else {
+            // Reload only employees from database to ensure consistency
+            const { data: allEmployeesData } = await (supabase as any).from('employees').select('*');
+            if (allEmployeesData) {
+              const formattedEmployees = allEmployeesData.map((emp: any) => ({
+                id: emp.id,
+                name: emp.name,
+                email: emp.email,
+                employeeId: emp.id,
+                managerId: '',
+                department: '',
+                monthlyLimit: emp.monthly_limit,
+                currentMonthPickups: emp.current_month_pickups,
+                lastResetMonth: emp.last_reset_month || ''
+              }));
+              setEmployees(formattedEmployees);
+            }
+          }
+        });
     }
   };
 
   const cancelPickup = (token: string, reason: string): boolean => {
     const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
     if (pickup) {
-      // Update in database
-      ((supabase as any).from('pickup_schedules')
-        .update({ 
-          status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-          cancellation_reason: reason
-        })
-        .eq('token', token) as any)
-        .then(({ error }: any) => {
-          if (error) {
-            console.error('Error cancelling pickup:', error);
-          } else {
-            // Reload data to reflect changes
-            loadUserData(user?.id || '');
-          }
-        });
-
       // Update local state immediately
       const updatedPickups = pickupSchedules.map(p => 
         p.token === token 
@@ -958,6 +998,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Restore employee available quantity
       updateEmployeePickupCount(pickup.employeeId, -pickup.quantity);
+
+      // Update in database
+      ((supabase as any).from('pickup_schedules')
+        .update({ 
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: reason
+        })
+        .eq('token', token) as any)
+        .then(async ({ error }: any) => {
+          if (error) {
+            console.error('Error cancelling pickup:', error);
+            // Revert on error
+            setPickupSchedules(pickupSchedules);
+          } else {
+            // Reload pickups to ensure consistency
+            const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+            if (pickupsData) {
+              const formattedPickups = pickupsData.map((p: any) => ({
+                id: p.id,
+                employeeId: p.employee_id,
+                storeId: p.store_id,
+                date: p.scheduled_date,
+                quantity: p.quantity,
+                observations: '',
+                token: p.token,
+                status: p.status as 'scheduled' | 'completed' | 'cancelled',
+                createdAt: p.created_at,
+                completedAt: p.completed_at || undefined,
+                cancelledAt: p.cancelled_at || undefined,
+                cancellationReason: p.cancellation_reason || undefined
+              }));
+              setPickupSchedules(formattedPickups);
+            }
+          }
+        });
       
       return true;
     }
