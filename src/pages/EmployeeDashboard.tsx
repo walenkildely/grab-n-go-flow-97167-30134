@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,9 +55,21 @@ const EmployeeDashboard: React.FC = () => {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [activeView, setActiveView] = useState<'pedidos' | 'perfil'>('pedidos');
 
-  const currentEmployee = employees.find(emp => emp.employeeId === user?.employeeId);
-  const userPickups = pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId);
-  const remainingPickups = currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0;
+  // Use useMemo to recalculate when employees or pickupSchedules change
+  const currentEmployee = useMemo(() => 
+    employees.find(emp => emp.employeeId === user?.employeeId),
+    [employees, user?.employeeId]
+  );
+
+  const userPickups = useMemo(() => 
+    pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId),
+    [pickupSchedules, user?.employeeId]
+  );
+
+  const remainingPickups = useMemo(() => 
+    currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0,
+    [currentEmployee]
+  );
 
   const handleSchedulePickup = async () => {
     if (!selectedStore || !selectedDate || !user?.employeeId) {
