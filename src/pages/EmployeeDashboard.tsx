@@ -59,7 +59,7 @@ const EmployeeDashboard: React.FC = () => {
   const userPickups = pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId);
   const remainingPickups = currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0;
 
-  const handleSchedulePickup = () => {
+  const handleSchedulePickup = async () => {
     if (!selectedStore || !selectedDate || !user?.employeeId) {
       toast({
         title: "Campos obrigatórios",
@@ -101,25 +101,34 @@ const EmployeeDashboard: React.FC = () => {
       return;
     }
 
-    const token = schedulePickup({
-      employeeId: user.employeeId,
-      storeId: selectedStore,
-      date: dateStr,
-      quantity: selectedQuantity,
-      observations
-    });
+    try {
+      const token = await schedulePickup({
+        employeeId: user.employeeId,
+        storeId: selectedStore,
+        date: dateStr,
+        quantity: selectedQuantity,
+        observations
+      });
 
-    toast({
-      title: "Agendamento realizado!",
-      description: `Seu token é: ${token}. Anote para a retirada!`,
-    });
+      toast({
+        title: "Agendamento realizado!",
+        description: `Seu token é: ${token}. Anote para a retirada!`,
+      });
 
-    // Reset form
-    setSelectedStore('');
-    setSelectedDate(undefined);
-    setTempSelectedDate(undefined);
-    setSelectedQuantity(1);
-    setObservations('');
+      // Reset form
+      setSelectedStore('');
+      setSelectedDate(undefined);
+      setTempSelectedDate(undefined);
+      setSelectedQuantity(1);
+      setObservations('');
+    } catch (error) {
+      console.error('Error scheduling pickup:', error);
+      toast({
+        title: "Erro ao agendar",
+        description: "Não foi possível realizar o agendamento. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   const copyToken = (token: string) => {

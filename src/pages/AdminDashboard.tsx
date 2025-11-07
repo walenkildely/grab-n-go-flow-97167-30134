@@ -941,7 +941,7 @@ const AdminDashboard: React.FC = () => {
               </Card>
             ) : (
               pickupSchedules.map((pickup) => {
-                const employee = employees.find(e => e.employeeId === pickup.employeeId);
+                const employee = employees.find(e => e.id === pickup.employeeId);
                 const store = stores.find(s => s.id === pickup.storeId);
                 
                 return (

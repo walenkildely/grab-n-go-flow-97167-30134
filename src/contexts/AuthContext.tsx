@@ -80,7 +80,7 @@ interface AuthContextType {
   updateStore: (storeId: string, updates: Partial<Store>) => Promise<void>;
   deleteStore: (storeId: string) => Promise<void>;
   resetStorePassword: (storeId: string, newPassword: string) => Promise<void>;
-  schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => string;
+  schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => Promise<string>;
   confirmPickup: (token: string) => boolean;
   cancelPickup: (token: string, reason: string) => boolean;
   updateEmployeePickupCount: (employeeId: string, quantity: number) => void;
@@ -824,62 +824,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const schedulePickup = (pickupData: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>): string => {
+  const schedulePickup = async (pickupData: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>): Promise<string> => {
     const token = generateToken();
     
-    // Create local pickup immediately for UI responsiveness
-    const newPickup: PickupSchedule = {
-      ...pickupData,
-      id: Date.now().toString(),
-      token,
-      status: 'scheduled' as const,
-      createdAt: new Date().toISOString()
-    };
-    
-    setPickupSchedules(prev => [...prev, newPickup]);
-    
-    // Update employee pickup count immediately for UI
-    updateEmployeePickupCount(pickupData.employeeId, pickupData.quantity);
-    
-    // Save to database
-    ((supabase as any).from('pickup_schedules').insert({
-      employee_id: pickupData.employeeId,
-      store_id: pickupData.storeId,
-      scheduled_date: pickupData.date,
-      quantity: pickupData.quantity,
-      token: token,
-      status: 'scheduled'
-    }) as any).then(async ({ data, error }: any) => {
-      if (error) {
-        console.error('Error saving pickup:', error);
-        // Remove from local state and revert employee count if save failed
-        setPickupSchedules(prev => prev.filter(p => p.token !== token));
-        updateEmployeePickupCount(pickupData.employeeId, -pickupData.quantity);
-      } else {
-        console.log('Pickup saved successfully');
-        // Reload pickups to get the correct ID from database
-        const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
-        if (pickupsData) {
-          const formattedPickups = pickupsData.map((p: any) => ({
-            id: p.id,
-            employeeId: p.employee_id,
-            storeId: p.store_id,
-            date: p.scheduled_date,
-            quantity: p.quantity,
-            observations: '',
-            token: p.token,
-            status: p.status as 'scheduled' | 'completed' | 'cancelled',
-            createdAt: p.created_at,
-            completedAt: p.completed_at || undefined,
-            cancelledAt: p.cancelled_at || undefined,
-            cancellationReason: p.cancellation_reason || undefined
-          }));
-          setPickupSchedules(formattedPickups);
-        }
+    try {
+      // Save to database first
+      const { error: insertError } = await (supabase as any).from('pickup_schedules').insert({
+        employee_id: pickupData.employeeId,
+        store_id: pickupData.storeId,
+        scheduled_date: pickupData.date,
+        quantity: pickupData.quantity,
+        token: token,
+        status: 'scheduled'
+      });
+
+      if (insertError) {
+        console.error('Error saving pickup:', insertError);
+        throw insertError;
       }
-    });
-    
-    return token;
+
+      console.log('Pickup saved successfully');
+
+      // Update employee pickup count in database
+      const employee = employees.find(e => e.id === pickupData.employeeId);
+      if (employee) {
+        const newCount = employee.currentMonthPickups + pickupData.quantity;
+        await (supabase as any)
+          .from('employees')
+          .update({ current_month_pickups: newCount })
+          .eq('id', pickupData.employeeId);
+      }
+
+      // Reload pickups and employees from database
+      const [pickupsResult, employeesResult] = await Promise.all([
+        (supabase as any).from('pickup_schedules').select('*'),
+        (supabase as any).from('employees').select('*')
+      ]);
+
+      if (pickupsResult.data) {
+        const formattedPickups = pickupsResult.data.map((p: any) => ({
+          id: p.id,
+          employeeId: p.employee_id,
+          storeId: p.store_id,
+          date: p.scheduled_date,
+          quantity: p.quantity,
+          observations: '',
+          token: p.token,
+          status: p.status as 'scheduled' | 'completed' | 'cancelled',
+          createdAt: p.created_at,
+          completedAt: p.completed_at || undefined,
+          cancelledAt: p.cancelled_at || undefined,
+          cancellationReason: p.cancellation_reason || undefined
+        }));
+        setPickupSchedules(formattedPickups);
+      }
+
+      if (employeesResult.data) {
+        const formattedEmployees = employeesResult.data.map((emp: any) => ({
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
+          employeeId: emp.id,
+          managerId: '',
+          department: '',
+          monthlyLimit: emp.monthly_limit,
+          currentMonthPickups: emp.current_month_pickups,
+          lastResetMonth: emp.last_reset_month || ''
+        }));
+        setEmployees(formattedEmployees);
+      }
+
+      return token;
+    } catch (error) {
+      console.error('Error scheduling pickup:', error);
+      throw error;
+    }
   };
 
   const confirmPickup = (token: string): boolean => {
