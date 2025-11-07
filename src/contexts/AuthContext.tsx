@@ -520,35 +520,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userId = empData.user_id;
 
-      // Delete all pickup_schedules for this employee
-      await (supabase as any)
-        .from('pickup_schedules')
-        .delete()
-        .eq('employee_id', employeeId);
+      // Call edge function to delete user completely
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: {
+          user_id: userId,
+          role: 'employee'
+        }
+      });
 
-      // Delete employee record
-      const { error: deleteError } = await (supabase as any)
-        .from('employees')
-        .delete()
-        .eq('id', employeeId);
-
-      if (deleteError) {
-        console.error('Error deleting employee:', deleteError);
-        throw new Error('Falha ao deletar funcionário: ' + deleteError.message);
+      if (error) {
+        console.error('Error calling delete-user function:', error);
+        throw new Error('Falha ao deletar funcionário: ' + error.message);
       }
 
-      // Delete user_roles
-      await (supabase as any)
-        .from('user_roles')
-        .delete()
-        .eq('user_id', userId);
-
-      // Delete from auth.users using admin API
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-      
-      if (authError) {
-        console.error('Error deleting auth user:', authError);
-      }
+      console.log('Employee deleted successfully:', data);
 
       // Reload employees
       const { data: employeesData } = await (supabase as any).from('employees').select('*');
@@ -644,40 +629,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userId = storeData.user_id;
 
-      // Delete all pickup_schedules for this store
-      await (supabase as any)
-        .from('pickup_schedules')
-        .delete()
-        .eq('store_id', storeId);
-
-      // Delete all store_capacities for this store
-      await (supabase as any)
-        .from('store_capacities')
-        .delete()
-        .eq('store_id', storeId);
-
-      // Delete store record
-      const { error: deleteError } = await (supabase as any)
-        .from('stores')
-        .delete()
-        .eq('id', storeId);
-
-      if (deleteError) {
-        console.error('Error deleting store:', deleteError);
-        throw new Error('Falha ao deletar loja: ' + deleteError.message);
-      }
-
-      // If store has user, delete user_roles and auth user
+      // If store has user, call edge function to delete user completely
       if (userId) {
-        await (supabase as any)
-          .from('user_roles')
-          .delete()
-          .eq('user_id', userId);
+        const { data, error } = await supabase.functions.invoke('delete-user', {
+          body: {
+            user_id: userId,
+            role: 'store'
+          }
+        });
 
-        const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-        
-        if (authError) {
-          console.error('Error deleting auth user:', authError);
+        if (error) {
+          console.error('Error calling delete-user function:', error);
+          throw new Error('Falha ao deletar loja: ' + error.message);
+        }
+
+        console.log('Store deleted successfully:', data);
+      } else {
+        // If no user associated, just delete the store record
+        await (supabase as any)
+          .from('pickup_schedules')
+          .delete()
+          .eq('store_id', storeId);
+
+        await (supabase as any)
+          .from('store_capacities')
+          .delete()
+          .eq('store_id', storeId);
+
+        const { error: deleteError } = await (supabase as any)
+          .from('stores')
+          .delete()
+          .eq('id', storeId);
+
+        if (deleteError) {
+          console.error('Error deleting store:', deleteError);
+          throw new Error('Falha ao deletar loja: ' + deleteError.message);
         }
       }
 
