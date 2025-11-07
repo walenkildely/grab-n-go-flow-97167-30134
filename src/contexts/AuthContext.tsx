@@ -833,12 +833,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Update employee pickup count in database
       const employee = employees.find(e => e.id === pickupData.employeeId);
+      console.log('Employee found:', employee);
+      console.log('Looking for employeeId:', pickupData.employeeId);
+      console.log('All employees:', employees.map(e => ({ id: e.id, employeeId: e.employeeId })));
+      
       if (employee) {
         const newCount = employee.currentMonthPickups + pickupData.quantity;
-        await (supabase as any)
+        console.log('Updating employee pickup count:', { oldCount: employee.currentMonthPickups, newCount });
+        
+        const { error: updateError } = await (supabase as any)
           .from('employees')
           .update({ current_month_pickups: newCount })
           .eq('id', pickupData.employeeId);
+        
+        if (updateError) {
+          console.error('Error updating employee count:', updateError);
+        } else {
+          console.log('Employee count updated successfully');
+        }
+      } else {
+        console.error('Employee not found for update!');
       }
 
       // Reload pickups and employees from database
@@ -877,9 +891,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           currentMonthPickups: emp.current_month_pickups,
           lastResetMonth: emp.last_reset_month || ''
         }));
+        console.log('Setting new employees state:', formattedEmployees);
         setEmployees(formattedEmployees);
       }
 
+      console.log('Pickup scheduled successfully, returning token:', token);
       return token;
     } catch (error) {
       console.error('Error scheduling pickup:', error);

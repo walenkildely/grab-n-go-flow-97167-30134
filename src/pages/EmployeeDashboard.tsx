@@ -56,20 +56,23 @@ const EmployeeDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState<'pedidos' | 'perfil'>('pedidos');
 
   // Use useMemo to recalculate when employees or pickupSchedules change
-  const currentEmployee = useMemo(() => 
-    employees.find(emp => emp.employeeId === user?.employeeId),
-    [employees, user?.employeeId]
-  );
+  const currentEmployee = useMemo(() => {
+    const emp = employees.find(emp => emp.employeeId === user?.employeeId);
+    console.log('EmployeeDashboard - currentEmployee recalculated:', emp);
+    return emp;
+  }, [employees, user?.employeeId]);
 
-  const userPickups = useMemo(() => 
-    pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId),
-    [pickupSchedules, user?.employeeId]
-  );
+  const userPickups = useMemo(() => {
+    const pickups = pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId);
+    console.log('EmployeeDashboard - userPickups recalculated:', pickups.length);
+    return pickups;
+  }, [pickupSchedules, user?.employeeId]);
 
-  const remainingPickups = useMemo(() => 
-    currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0,
-    [currentEmployee]
-  );
+  const remainingPickups = useMemo(() => {
+    const remaining = currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0;
+    console.log('EmployeeDashboard - remainingPickups recalculated:', remaining);
+    return remaining;
+  }, [currentEmployee]);
 
   const handleSchedulePickup = async () => {
     if (!selectedStore || !selectedDate || !user?.employeeId) {
@@ -114,6 +117,12 @@ const EmployeeDashboard: React.FC = () => {
     }
 
     try {
+      console.log('Before scheduling pickup:', {
+        currentEmployee,
+        remainingPickups,
+        employeesCount: employees.length
+      });
+
       const token = await schedulePickup({
         employeeId: user.employeeId,
         storeId: selectedStore,
@@ -121,6 +130,11 @@ const EmployeeDashboard: React.FC = () => {
         quantity: selectedQuantity,
         observations
       });
+
+      console.log('After scheduling pickup - token:', token);
+      console.log('After scheduling pickup - employees:', employees);
+      console.log('After scheduling pickup - currentEmployee:', currentEmployee);
+      console.log('After scheduling pickup - remainingPickups:', remainingPickups);
 
       toast({
         title: "Agendamento realizado!",
