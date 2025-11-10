@@ -423,7 +423,7 @@ const StoreDashboard: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {selectedDatePickups.map((pickup) => {
-                const employee = employees.find(e => e.id === pickup.employeeId);
+                const employee = employees.find(e => e.employeeId === pickup.employeeId);
                 
                 return (
                   <div key={pickup.id}>
@@ -671,7 +671,7 @@ const StoreDashboard: React.FC = () => {
               {storePickups
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                 .map((pickup) => {
-                  const employee = employees.find(e => e.id === pickup.employeeId);
+                  const employee = employees.find(e => e.employeeId === pickup.employeeId);
                   
                   return (
                     <div key={pickup.id} className="flex items-center justify-between p-4 border rounded-lg">
