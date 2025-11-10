@@ -833,13 +833,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Update employee pickup count in database
       const employee = employees.find(e => e.id === pickupData.employeeId);
-      console.log('Employee found:', employee);
-      console.log('Looking for employeeId:', pickupData.employeeId);
-      console.log('All employees:', employees.map(e => ({ id: e.id, employeeId: e.employeeId })));
       
       if (employee) {
         const newCount = employee.currentMonthPickups + pickupData.quantity;
-        console.log('Updating employee pickup count:', { oldCount: employee.currentMonthPickups, newCount });
         
         const { error: updateError } = await (supabase as any)
           .from('employees')
@@ -849,50 +845,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (updateError) {
           console.error('Error updating employee count:', updateError);
         } else {
-          console.log('Employee count updated successfully');
+          // Update local state immediately
+          setEmployees(prev => prev.map(emp => 
+            emp.id === pickupData.employeeId 
+              ? { ...emp, currentMonthPickups: newCount }
+              : emp
+          ));
         }
-      } else {
-        console.error('Employee not found for update!');
       }
 
-      // Reload pickups and employees from database
-      const [pickupsResult, employeesResult] = await Promise.all([
-        (supabase as any).from('pickup_schedules').select('*'),
-        (supabase as any).from('employees').select('*')
-      ]);
+      // Reload pickups from database
+      const { data: pickupsData } = await (supabase as any)
+        .from('pickup_schedules')
+        .select('*')
+        .order('scheduled_date', { ascending: false });
 
-      if (pickupsResult.data) {
-        const formattedPickups = pickupsResult.data.map((p: any) => ({
-          id: p.id,
-          employeeId: p.employee_id,
-          storeId: p.store_id,
-          date: p.scheduled_date,
-          quantity: p.quantity,
-          observations: '',
-          token: p.token,
-          status: p.status as 'scheduled' | 'completed' | 'cancelled',
-          createdAt: p.created_at,
-          completedAt: p.completed_at || undefined,
-          cancelledAt: p.cancelled_at || undefined,
-          cancellationReason: p.cancellation_reason || undefined
+      if (pickupsData) {
+        const formattedPickups: PickupSchedule[] = pickupsData.map((pickup: any) => ({
+          id: pickup.id,
+          employeeId: pickup.employee_id,
+          storeId: pickup.store_id,
+          scheduledDate: pickup.scheduled_date,
+          quantity: pickup.quantity,
+          status: pickup.status,
+          completedAt: pickup.completed_at,
+          cancelledAt: pickup.cancelled_at,
+          cancellationReason: pickup.cancellation_reason,
+          token: pickup.token
         }));
         setPickupSchedules(formattedPickups);
-      }
-
-      if (employeesResult.data) {
-        const formattedEmployees = employeesResult.data.map((emp: any) => ({
-          id: emp.id,
-          name: emp.name,
-          email: emp.email,
-          employeeId: emp.id,
-          managerId: '',
-          department: '',
-          monthlyLimit: emp.monthly_limit,
-          currentMonthPickups: emp.current_month_pickups,
-          lastResetMonth: emp.last_reset_month || ''
-        }));
-        console.log('Setting new employees state:', formattedEmployees);
-        setEmployees(formattedEmployees);
       }
 
       console.log('Pickup scheduled successfully, returning token:', token);
