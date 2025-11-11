@@ -250,6 +250,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_employee_with_pickup: {
+        Args: { _pickup_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_store_with_employee_pickup: {
+        Args: { _employee_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_store_with_pickup: {
+        Args: { _pickup_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "employee" | "store"

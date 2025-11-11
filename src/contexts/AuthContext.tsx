@@ -419,6 +419,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (employeeData: Omit<Employee, 'id' | 'currentMonthPickups' | 'lastResetMonth'>) => {
     try {
+      console.log('Adding employee:', { name: employeeData.name, email: employeeData.email, cpf: employeeData.employeeId });
+      
       // Call edge function to create user without affecting admin session
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
@@ -436,17 +438,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Error creating employee:', error);
+        console.error('Error calling create-user for employee:', error);
         const errorMessage = error.message || JSON.stringify(error);
         
         if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
           throw new Error('Já existe um usuário cadastrado com este email');
         }
         
+        if (errorMessage.includes('CPF')) {
+          throw new Error(errorMessage);
+        }
+        
         throw new Error('Falha ao criar funcionário: ' + errorMessage);
       }
 
-      console.log('Employee created successfully:', data);
+      console.log('Employee created successfully via edge function:', data);
 
       // Reload employees
       const { data: employeesData } = await (supabase as any).from('employees').select('*');
@@ -712,8 +718,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addStore = async (storeData: Omit<Store, 'id'> & { email?: string; password?: string }) => {
     try {
+      console.log('Adding store:', { name: storeData.name, hasEmail: !!storeData.email, hasPassword: !!storeData.password });
+      
       // If email and password provided, create user account via edge function
       if (storeData.email && storeData.password) {
+        console.log('Creating store with user account via edge function');
+        
         const { data, error } = await supabase.functions.invoke('create-user', {
           body: {
             email: storeData.email,
@@ -729,7 +739,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          console.error('Error creating store:', error);
+          console.error('Error calling create-user for store:', error);
           const errorMessage = error.message || JSON.stringify(error);
           
           if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
@@ -739,8 +749,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Falha ao criar loja: ' + errorMessage);
         }
 
-        console.log('Store created successfully:', data);
+        console.log('Store created successfully via edge function:', data);
       } else {
+        console.log('Creating store without user account');
+        
         // Create store without user
         const { error: storeError } = await (supabase as any).from('stores').insert({
           name: storeData.name,
@@ -753,7 +765,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Falha ao criar registro da loja: ' + storeError.message);
         }
 
-        console.log('Created store record');
+        console.log('Created store record without user');
       }
 
       // Reload stores

@@ -27,6 +27,8 @@ serve(async (req) => {
 
     const { email, password, full_name, role, metadata } = await req.json()
 
+    console.log('Creating user:', { email, role, metadata })
+
     // Create user with admin privileges
     const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -38,6 +40,7 @@ serve(async (req) => {
     })
 
     if (createError) {
+      console.error('Error creating auth user:', createError)
       throw createError
     }
 
@@ -46,6 +49,7 @@ serve(async (req) => {
     }
 
     createdUserId = userData.user.id;
+    console.log('Auth user created:', createdUserId)
 
     // Create role entry
     const { error: roleError } = await supabaseAdmin
@@ -62,8 +66,12 @@ serve(async (req) => {
       throw new Error('Falha ao criar role do usuário')
     }
 
+    console.log('Role created:', role)
+
     // Create employee or store record based on role
     if (role === 'employee' && metadata) {
+      console.log('Creating employee record:', metadata)
+      
       const { error: employeeError } = await supabaseAdmin
         .from('employees')
         .insert({
@@ -80,9 +88,24 @@ serve(async (req) => {
         console.error('Error creating employee:', employeeError)
         // Rollback: delete the user
         await supabaseAdmin.auth.admin.deleteUser(createdUserId)
-        throw new Error('Falha ao criar registro do funcionário')
+        
+        // Check for specific errors
+        if (employeeError.code === '23505') {
+          if (employeeError.message.includes('cpf')) {
+            throw new Error('Já existe um funcionário cadastrado com este CPF')
+          }
+          if (employeeError.message.includes('email')) {
+            throw new Error('Já existe um funcionário cadastrado com este email')
+          }
+        }
+        
+        throw new Error('Falha ao criar registro do funcionário: ' + employeeError.message)
       }
+      
+      console.log('Employee record created successfully')
     } else if (role === 'store' && metadata) {
+      console.log('Creating store record:', metadata)
+      
       const { error: storeError } = await supabaseAdmin
         .from('stores')
         .insert({
@@ -96,9 +119,13 @@ serve(async (req) => {
         console.error('Error creating store:', storeError)
         // Rollback: delete the user
         await supabaseAdmin.auth.admin.deleteUser(createdUserId)
-        throw new Error('Falha ao criar registro da loja')
+        throw new Error('Falha ao criar registro da loja: ' + storeError.message)
       }
+      
+      console.log('Store record created successfully')
     }
+
+    console.log('User creation completed successfully')
 
     return new Response(
       JSON.stringify({ user: userData.user }),
