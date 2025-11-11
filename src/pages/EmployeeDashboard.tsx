@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -22,7 +22,8 @@ import {
   Copy,
   XCircle,
   QrCode,
-  PanelLeft
+  PanelLeft,
+  BellRing
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -127,7 +128,7 @@ const EmployeeDashboard: React.FC = () => {
 
       toast({
         title: "Agendamento realizado!",
-        description: `Seu token é: ${token}. Anote para a retirada!`,
+        description: `Seu token é: ${token}. A loja receberá um alerta push com o pedido.`,
       });
 
       // Reset form
@@ -182,7 +183,7 @@ const EmployeeDashboard: React.FC = () => {
       case 'completed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle className="h-3 w-3 mr-1" />Concluída</Badge>;
       case 'scheduled':
-        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Agendada</Badge>;
+        return <Badge variant="secondary"><BellRing className="h-3 w-3 mr-1" />Agendada</Badge>;
       case 'cancelled':
         return <Badge variant="destructive">Cancelada</Badge>;
       default:
@@ -221,6 +222,14 @@ const EmployeeDashboard: React.FC = () => {
           <p className="text-muted-foreground">Agende suas retiradas de produtos</p>
         </div>
       </div>
+
+      <Alert className="bg-card">
+        <BellRing className="h-4 w-4" />
+        <AlertTitle>Receba avisos instantâneos</AlertTitle>
+        <AlertDescription>
+          Autorize as notificações push para saber quando a loja confirmar ou cancelar suas retiradas em tempo real.
+        </AlertDescription>
+      </Alert>
 
       {/* Current Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

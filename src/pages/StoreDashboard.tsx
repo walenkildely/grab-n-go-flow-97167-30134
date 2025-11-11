@@ -5,13 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { 
-  Package, 
+  Package,
   CheckCircle,
   Clock,
   Search,
@@ -21,7 +21,8 @@ import {
   XCircle,
   Camera,
   QrCode,
-  Keyboard
+  Keyboard,
+  BellRing
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -86,12 +87,12 @@ const StoreDashboard: React.FC = () => {
     setIsConfirming(true);
     
     try {
-      const success = confirmPickup(tokenInput.trim());
-      
+      const success = await confirmPickup(tokenInput.trim());
+
       if (success) {
         toast({
           title: "Retirada confirmada!",
-          description: "O produto foi entregue com sucesso.",
+          description: "O funcionário receberá um alerta push confirmando a retirada.",
         });
         setTokenInput('');
       } else {
@@ -123,12 +124,12 @@ const StoreDashboard: React.FC = () => {
     }
 
     try {
-      const success = cancelPickup(cancellingToken, cancellationReason);
-      
+      const success = await cancelPickup(cancellingToken, cancellationReason);
+
       if (success) {
         toast({
           title: "Retirada cancelada",
-          description: "O funcionário foi notificado sobre o cancelamento."
+          description: "O funcionário receberá uma notificação push com o cancelamento."
         });
         setCancellingToken(null);
         setCancellationReason('');
@@ -217,12 +218,12 @@ const StoreDashboard: React.FC = () => {
     setIsConfirming(true);
     
     try {
-      const success = confirmPickup(token.trim());
-      
+      const success = await confirmPickup(token.trim());
+
       if (success) {
         toast({
           title: "Retirada confirmada!",
-          description: "O produto foi entregue com sucesso.",
+          description: "O funcionário receberá um alerta push confirmando a retirada.",
         });
         setSelectedPickup(null);
         setTokenInput('');
@@ -249,7 +250,7 @@ const StoreDashboard: React.FC = () => {
       case 'completed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle className="h-3 w-3 mr-1" />Concluída</Badge>;
       case 'scheduled':
-        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Agendada</Badge>;
+        return <Badge variant="secondary"><BellRing className="h-3 w-3 mr-1" />Agendada</Badge>;
       case 'cancelled':
         return <Badge variant="destructive">Cancelada</Badge>;
       default:
@@ -265,6 +266,14 @@ const StoreDashboard: React.FC = () => {
           <p className="text-muted-foreground">{currentStore?.name} - {currentStore?.location}</p>
         </div>
       </div>
+
+      <Alert className="bg-card">
+        <BellRing className="h-4 w-4" />
+        <AlertTitle>Notificações em tempo real</AlertTitle>
+        <AlertDescription>
+          Confirmações e cancelamentos agora geram alertas push automáticos para os funcionários cadastrados.
+        </AlertDescription>
+      </Alert>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
