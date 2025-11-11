@@ -47,7 +47,12 @@ const InitialSetup = () => {
           role: 'admin',
         });
 
-      if (roleError) throw roleError;
+      if (roleError) {
+        console.error('Error creating role:', roleError);
+        // Rollback: delete the user
+        await supabase.auth.admin.deleteUser(signUpData.user.id);
+        throw new Error('Falha ao criar role do administrador: ' + roleError.message);
+      }
 
       // 3. Sign out from auto-login
       await supabase.auth.signOut();

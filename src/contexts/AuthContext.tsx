@@ -394,10 +394,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.user) {
         // Create role entry
-        await (supabase as any).from('user_roles').insert({
+        const { error: roleError } = await (supabase as any).from('user_roles').insert({
           user_id: data.user.id,
           role: role
         });
+
+        if (roleError) {
+          console.error('Error creating role:', roleError);
+          return { error: 'Falha ao criar role do usuário: ' + roleError.message };
+        }
       }
 
       return {};
