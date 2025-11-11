@@ -455,6 +455,11 @@ const StoreDashboard: React.FC = () => {
                               <p className="text-sm text-muted-foreground">
                                 Mat: {employee?.employeeId} | {pickup.quantity} produto{pickup.quantity > 1 ? 's' : ''}
                               </p>
+                              {employee && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Consumo no mês: {employee.currentMonthPickups}/{employee.monthlyLimit}
+                                </p>
+                              )}
                               {pickup.observations && (
                                 <p className="text-xs text-muted-foreground mt-1">
                                   Produtos: {pickup.observations}
@@ -487,6 +492,11 @@ const StoreDashboard: React.FC = () => {
                               <p className="font-medium text-muted-foreground">Funcionário:</p>
                               <p className="font-semibold">{employee?.name}</p>
                               <p className="text-xs text-muted-foreground">Mat: {employee?.employeeId}</p>
+                              {employee && (
+                                <p className="text-xs text-muted-foreground">
+                                  Consumo no mês: {employee.currentMonthPickups}/{employee.monthlyLimit}
+                                </p>
+                              )}
                             </div>
                             <div>
                               <p className="font-medium text-muted-foreground">Quantidade:</p>
