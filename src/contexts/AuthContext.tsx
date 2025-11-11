@@ -422,7 +422,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Adding employee:', { name: employeeData.name, email: employeeData.email, cpf: employeeData.employeeId });
       
       // Call edge function to create user without affecting admin session
-      const { data, error } = await supabase.functions.invoke('create-user', {
+      const response = await supabase.functions.invoke('create-user', {
         body: {
           email: employeeData.email,
           password: '123456',
@@ -437,11 +437,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       });
 
-      if (error) {
-        console.error('Error calling create-user for employee:', error);
-        const errorMessage = error.message || JSON.stringify(error);
+      console.log('Edge function response:', response);
+
+      if (response.error) {
+        console.error('Error calling create-user for employee:', response.error);
         
-        if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
+        // Try to get the error from the response data
+        const errorData = response.data;
+        const errorMessage = errorData?.error || errorData?.details || response.error.message || JSON.stringify(response.error);
+        
+        console.log('Extracted error message:', errorMessage);
+        
+        if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists') || errorMessage.includes('Já existe um usuário cadastrado com este email')) {
           throw new Error('Já existe um usuário cadastrado com este email');
         }
         
@@ -452,7 +459,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Falha ao criar funcionário: ' + errorMessage);
       }
 
-      console.log('Employee created successfully via edge function:', data);
+      console.log('Employee created successfully via edge function:', response.data);
 
       // Reload employees
       const { data: employeesData } = await (supabase as any).from('employees').select('*');
@@ -724,7 +731,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (storeData.email && storeData.password) {
         console.log('Creating store with user account via edge function');
         
-        const { data, error } = await supabase.functions.invoke('create-user', {
+        const response = await supabase.functions.invoke('create-user', {
           body: {
             email: storeData.email,
             password: storeData.password,
@@ -738,18 +745,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
 
-        if (error) {
-          console.error('Error calling create-user for store:', error);
-          const errorMessage = error.message || JSON.stringify(error);
+        console.log('Edge function response:', response);
+
+        if (response.error) {
+          console.error('Error calling create-user for store:', response.error);
           
-          if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists')) {
+          // Try to get the error from the response data
+          const errorData = response.data;
+          const errorMessage = errorData?.error || errorData?.details || response.error.message || JSON.stringify(response.error);
+          
+          console.log('Extracted error message:', errorMessage);
+          
+          if (errorMessage.includes('email address has already been registered') || errorMessage.includes('email_exists') || errorMessage.includes('Já existe um usuário cadastrado com este email')) {
             throw new Error('Já existe um usuário cadastrado com este email');
           }
           
           throw new Error('Falha ao criar loja: ' + errorMessage);
         }
 
-        console.log('Store created successfully via edge function:', data);
+        console.log('Store created successfully via edge function:', response.data);
       } else {
         console.log('Creating store without user account');
         
