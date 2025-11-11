@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { Session } from '@supabase/supabase-js';
+import { registerPushNotifications } from '@/lib/push';
 
 export type UserRole = 'admin' | 'store' | 'employee';
 
@@ -81,8 +82,8 @@ interface AuthContextType {
   deleteStore: (storeId: string) => Promise<void>;
   resetStorePassword: (storeId: string, newPassword: string) => Promise<void>;
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => Promise<string>;
-  confirmPickup: (token: string) => boolean;
-  cancelPickup: (token: string, reason: string) => boolean;
+  confirmPickup: (token: string) => Promise<boolean>;
+  cancelPickup: (token: string, reason: string) => Promise<boolean>;
   updateEmployeePickupCount: (employeeId: string, quantity: number) => void;
   resetMonthlyLimits: () => void;
   getAvailableCapacity: (storeId: string, date: string) => number;
@@ -131,6 +132,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      registerPushNotifications(user).catch(error => {
+        console.error('Failed to register push notifications:', error);
+      });
+    }
+  }, [user]);
 
   const loadUserData = async (userId: string) => {
     try {
@@ -896,15 +905,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: pickup.id,
           employeeId: pickup.employee_id,
           storeId: pickup.store_id,
-          scheduledDate: pickup.scheduled_date,
+          date: pickup.scheduled_date,
           quantity: pickup.quantity,
-          status: pickup.status,
-          completedAt: pickup.completed_at,
-          cancelledAt: pickup.cancelled_at,
-          cancellationReason: pickup.cancellation_reason,
-          token: pickup.token
+          observations: '',
+          token: pickup.token,
+          status: pickup.status as 'scheduled' | 'completed' | 'cancelled' | 'pending',
+          createdAt: pickup.created_at,
+          completedAt: pickup.completed_at || undefined,
+          cancelledAt: pickup.cancelled_at || undefined,
+          cancellationReason: pickup.cancellation_reason || undefined
         }));
         setPickupSchedules(formattedPickups);
+      }
+
+      const employeeRecord = employees.find(emp => emp.id === pickupData.employeeId || emp.employeeId === pickupData.employeeId);
+
+      try {
+        const { error: notificationError } = await supabase.functions.invoke('notify-store-pickup', {
+          body: {
+            storeId: pickupData.storeId,
+            pickupToken: token,
+            pickupDate: pickupData.date,
+            quantity: pickupData.quantity,
+            employeeName: employeeRecord?.name,
+          }
+        });
+
+        if (notificationError) {
+          console.error('Error sending push notification to store:', notificationError);
+        }
+      } catch (error) {
+        console.error('Unexpected error invoking notify-store-pickup function:', error);
       }
 
       console.log('Pickup scheduled successfully, returning token:', token);
@@ -915,55 +946,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const confirmPickup = (token: string): boolean => {
-    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
-    if (pickup) {
-      // Update local state immediately for UI responsiveness
-      const updatedPickups = pickupSchedules.map(p => 
-        p.token === token 
-          ? { ...p, status: 'completed' as const, completedAt: new Date().toISOString() }
-          : p
-      );
-      setPickupSchedules(updatedPickups);
+  const confirmPickup = async (token: string): Promise<boolean> => {
+    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || (p.status as any) === 'pending'));
+    if (!pickup) {
+      return false;
+    }
 
-      // Update in database
-      ((supabase as any).from('pickup_schedules')
-        .update({ 
+    const previousState = pickupSchedules;
+    const updatedPickups = pickupSchedules.map(p =>
+      p.token === token
+        ? { ...p, status: 'completed' as const, completedAt: new Date().toISOString() }
+        : p
+    );
+    setPickupSchedules(updatedPickups);
+
+    try {
+      const { error } = await (supabase as any)
+        .from('pickup_schedules')
+        .update({
           status: 'completed',
           completed_at: new Date().toISOString()
         })
-        .eq('token', token) as any)
-        .then(async ({ error }: any) => {
-          if (error) {
-            console.error('Error confirming pickup:', error);
-            // Revert on error
-            setPickupSchedules(pickupSchedules);
-          } else {
-            // Reload pickups to ensure consistency
-            const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
-            if (pickupsData) {
-              const formattedPickups = pickupsData.map((p: any) => ({
-                id: p.id,
-                employeeId: p.employee_id,
-                storeId: p.store_id,
-                date: p.scheduled_date,
-                quantity: p.quantity,
-                observations: '',
-                token: p.token,
-                status: p.status as 'scheduled' | 'completed' | 'cancelled',
-                createdAt: p.created_at,
-                completedAt: p.completed_at || undefined,
-                cancelledAt: p.cancelled_at || undefined,
-                cancellationReason: p.cancellation_reason || undefined
-              }));
-              setPickupSchedules(formattedPickups);
-            }
+        .eq('token', token);
+
+      if (error) {
+        console.error('Error confirming pickup:', error);
+        setPickupSchedules(previousState);
+        return false;
+      }
+
+      const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+      if (pickupsData) {
+        const formattedPickups = pickupsData.map((p: any) => ({
+          id: p.id,
+          employeeId: p.employee_id,
+          storeId: p.store_id,
+          date: p.scheduled_date,
+          quantity: p.quantity,
+          observations: '',
+          token: p.token,
+          status: p.status as 'scheduled' | 'completed' | 'cancelled',
+          createdAt: p.created_at,
+          completedAt: p.completed_at || undefined,
+          cancelledAt: p.cancelled_at || undefined,
+          cancellationReason: p.cancellation_reason || undefined
+        }));
+        setPickupSchedules(formattedPickups);
+      }
+
+      const store = stores.find(s => s.id === pickup.storeId);
+
+      try {
+        const { error: notificationError } = await supabase.functions.invoke('notify-employee-pickup', {
+          body: {
+            employeeId: pickup.employeeId,
+            status: 'completed',
+            token,
+            storeName: store?.name,
+            pickupDate: pickup.date || pickup.createdAt,
           }
         });
-      
+
+        if (notificationError) {
+          console.error('Error sending confirmation push notification:', notificationError);
+        }
+      } catch (notificationError) {
+        console.error('Unexpected error invoking notify-employee-pickup function:', notificationError);
+      }
+
       return true;
+    } catch (error) {
+      console.error('Error confirming pickup:', error);
+      setPickupSchedules(previousState);
+      return false;
     }
-    return false;
   };
 
   const updateEmployeePickupCount = (employeeId: string, quantity: number) => {
@@ -1013,64 +1069,91 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const cancelPickup = (token: string, reason: string): boolean => {
-    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || p.status as any === 'pending'));
-    if (pickup) {
-      // Update local state immediately
-      const updatedPickups = pickupSchedules.map(p => 
-        p.token === token 
-          ? { 
-              ...p, 
-              status: 'cancelled' as const, 
-              cancelledAt: new Date().toISOString(),
-              cancellationReason: reason
-            }
-          : p
-      );
-      setPickupSchedules(updatedPickups);
-      
-      // Restore employee available quantity
-      updateEmployeePickupCount(pickup.employeeId, -pickup.quantity);
+  const cancelPickup = async (token: string, reason: string): Promise<boolean> => {
+    const pickup = pickupSchedules.find(p => p.token === token && (p.status === 'scheduled' || (p.status as any) === 'pending'));
+    if (!pickup) {
+      return false;
+    }
 
-      // Update in database
-      ((supabase as any).from('pickup_schedules')
-        .update({ 
+    const previousState = pickupSchedules;
+    const updatedPickups = pickupSchedules.map(p =>
+      p.token === token
+        ? {
+            ...p,
+            status: 'cancelled' as const,
+            cancelledAt: new Date().toISOString(),
+            cancellationReason: reason
+          }
+        : p
+    );
+    setPickupSchedules(updatedPickups);
+
+    updateEmployeePickupCount(pickup.employeeId, -pickup.quantity);
+
+    try {
+      const { error } = await (supabase as any)
+        .from('pickup_schedules')
+        .update({
           status: 'cancelled',
           cancelled_at: new Date().toISOString(),
           cancellation_reason: reason
         })
-        .eq('token', token) as any)
-        .then(async ({ error }: any) => {
-          if (error) {
-            console.error('Error cancelling pickup:', error);
-            // Revert on error
-            setPickupSchedules(pickupSchedules);
-          } else {
-            // Reload pickups to ensure consistency
-            const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
-            if (pickupsData) {
-              const formattedPickups = pickupsData.map((p: any) => ({
-                id: p.id,
-                employeeId: p.employee_id,
-                storeId: p.store_id,
-                date: p.scheduled_date,
-                quantity: p.quantity,
-                observations: '',
-                token: p.token,
-                status: p.status as 'scheduled' | 'completed' | 'cancelled',
-                createdAt: p.created_at,
-                completedAt: p.completed_at || undefined,
-                cancelledAt: p.cancelled_at || undefined,
-                cancellationReason: p.cancellation_reason || undefined
-              }));
-              setPickupSchedules(formattedPickups);
-            }
+        .eq('token', token);
+
+      if (error) {
+        console.error('Error cancelling pickup:', error);
+        setPickupSchedules(previousState);
+        updateEmployeePickupCount(pickup.employeeId, pickup.quantity);
+        return false;
+      }
+
+      const { data: pickupsData } = await (supabase as any).from('pickup_schedules').select('*');
+      if (pickupsData) {
+        const formattedPickups = pickupsData.map((p: any) => ({
+          id: p.id,
+          employeeId: p.employee_id,
+          storeId: p.store_id,
+          date: p.scheduled_date,
+          quantity: p.quantity,
+          observations: '',
+          token: p.token,
+          status: p.status as 'scheduled' | 'completed' | 'cancelled',
+          createdAt: p.created_at,
+          completedAt: p.completed_at || undefined,
+          cancelledAt: p.cancelled_at || undefined,
+          cancellationReason: p.cancellation_reason || undefined
+        }));
+        setPickupSchedules(formattedPickups);
+      }
+
+      const store = stores.find(s => s.id === pickup.storeId);
+
+      try {
+        const { error: notificationError } = await supabase.functions.invoke('notify-employee-pickup', {
+          body: {
+            employeeId: pickup.employeeId,
+            status: 'cancelled',
+            token,
+            storeName: store?.name,
+            pickupDate: pickup.date || pickup.createdAt,
+            reason,
           }
         });
-      
+
+        if (notificationError) {
+          console.error('Error sending cancellation push notification:', notificationError);
+        }
+      } catch (notificationError) {
+        console.error('Unexpected error invoking notify-employee-pickup function:', notificationError);
+      }
+
       return true;
+    } catch (error) {
+      console.error('Error cancelling pickup:', error);
+      setPickupSchedules(previousState);
+      updateEmployeePickupCount(pickup.employeeId, pickup.quantity);
+      return false;
     }
-    return false;
   };
 
   const resetMonthlyLimits = () => {
