@@ -56,19 +56,22 @@ const EmployeeDashboard: React.FC = () => {
   const [activeView, setActiveView] = useState<'pedidos' | 'perfil'>('pedidos');
 
   // Use useMemo to recalculate when employees or pickupSchedules change
-  const currentEmployee = useMemo(() => 
+  const currentEmployee = useMemo(() =>
     employees.find(emp => emp.employeeId === user?.employeeId),
     [employees, user?.employeeId]
   );
 
-  const userPickups = useMemo(() => 
+  const currentMonthPickups = currentEmployee?.currentMonthPickups ?? user?.currentMonthPickups ?? 0;
+  const lastResetMonth = currentEmployee?.lastResetMonth ?? user?.lastResetMonth ?? '';
+
+  const userPickups = useMemo(() =>
     pickupSchedules.filter(pickup => pickup.employeeId === user?.employeeId),
     [pickupSchedules, user?.employeeId]
   );
 
-  const remainingPickups = useMemo(() => 
-    currentEmployee ? currentEmployee.monthlyLimit - currentEmployee.currentMonthPickups : 0,
-    [currentEmployee]
+  const remainingPickups = useMemo(() =>
+    currentEmployee ? currentEmployee.monthlyLimit - currentMonthPickups : 0,
+    [currentEmployee, currentMonthPickups]
   );
 
   const handleSchedulePickup = async () => {
@@ -90,7 +93,7 @@ const EmployeeDashboard: React.FC = () => {
       return;
     }
 
-    if (currentEmployee.currentMonthPickups + selectedQuantity > currentEmployee.monthlyLimit) {
+    if (currentMonthPickups + selectedQuantity > currentEmployee.monthlyLimit) {
       toast({
         title: "Limite excedido",
         description: "Esta quantidade excede seu limite mensal.",
@@ -238,7 +241,10 @@ const EmployeeDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Já Retirados</p>
-                <p className="text-3xl font-bold text-foreground">{currentEmployee?.currentMonthPickups || 0}</p>
+                <p className="text-3xl font-bold text-foreground">{currentMonthPickups}</p>
+                {lastResetMonth && (
+                  <p className="text-xs text-muted-foreground">Atualizado em {lastResetMonth}</p>
+                )}
               </div>
               <CheckCircle className="h-8 w-8 text-success" />
             </div>
@@ -265,14 +271,14 @@ const EmployeeDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Progresso Mensal</h3>
               <span className="text-sm text-muted-foreground">
-                {currentEmployee.currentMonthPickups}/{currentEmployee.monthlyLimit}
+                {currentMonthPickups}/{currentEmployee.monthlyLimit}
               </span>
             </div>
             <div className="w-full bg-secondary h-4 rounded-full">
               <div 
                 className="bg-gradient-primary h-4 rounded-full transition-all"
                 style={{ 
-                  width: `${(currentEmployee.currentMonthPickups / currentEmployee.monthlyLimit) * 100}%` 
+                  width: `${(currentMonthPickups / currentEmployee.monthlyLimit) * 100}%`
                 }}
               />
             </div>

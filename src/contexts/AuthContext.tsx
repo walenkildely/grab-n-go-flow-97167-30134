@@ -12,6 +12,8 @@ export interface User {
   employeeId?: string;
   storeId?: string;
   managerId?: string;
+  currentMonthPickups?: number;
+  lastResetMonth?: string;
 }
 
 export interface Employee {
@@ -83,8 +85,8 @@ interface AuthContextType {
   schedulePickup: (pickup: Omit<PickupSchedule, 'id' | 'token' | 'createdAt' | 'status' | 'completedAt' | 'cancelledAt' | 'cancellationReason'>) => Promise<string>;
   confirmPickup: (token: string) => boolean;
   cancelPickup: (token: string, reason: string) => boolean;
-  updateEmployeePickupCount: (employeeId: string, quantity: number) => void;
-  resetMonthlyLimits: () => void;
+  updateEmployeePickupCount: (employeeId: string, quantity: number) => Promise<void>;
+  resetMonthlyLimits: () => Promise<void>;
   getAvailableCapacity: (storeId: string, date: string) => number;
   updateStoreCapacity: (storeId: string, date: string, increment: number) => void;
   updateStoreMaxCapacity: (storeId: string, newCapacity: number) => void;
@@ -209,7 +211,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: employeeData.name,
             email: employeeData.email,
             role: 'employee',
-            employeeId: employeeData.id
+            employeeId: employeeData.id,
+            currentMonthPickups: employeeData.current_month_pickups || 0,
+            lastResetMonth: employeeData.last_reset_month || ''
           });
 
           // Load all employees for the employee dashboard
@@ -328,24 +332,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const checkAndResetMonthlyLimits = () => {
+  const checkAndResetMonthlyLimits = async () => {
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const savedEmployees = localStorage.getItem('employees');
-    const employeeList = savedEmployees ? JSON.parse(savedEmployees) : [];
-    
-    const updatedEmployees = employeeList.map((emp: Employee) => {
-      if (emp.lastResetMonth !== currentMonth) {
-        return {
-          ...emp,
-          currentMonthPickups: 0,
-          lastResetMonth: currentMonth
-        };
-      }
-      return emp;
-    });
 
-    setEmployees(updatedEmployees);
-    localStorage.setItem('employees', JSON.stringify(updatedEmployees));
+    try {
+      const { data: employeesData, error } = await (supabase as any)
+        .from('employees')
+        .select('*');
+
+      if (error) {
+        console.error('Error loading employees for reset:', error);
+        return;
+      }
+
+      if (!employeesData) {
+        setEmployees([]);
+        return;
+      }
+
+      const employeesToReset = employeesData.filter((emp: any) => (emp.last_reset_month || '') !== currentMonth);
+
+      if (employeesToReset.length > 0) {
+        const { error: updateError } = await (supabase as any)
+          .from('employees')
+          .update({
+            current_month_pickups: 0,
+            last_reset_month: currentMonth
+          })
+          .in('id', employeesToReset.map((emp: any) => emp.id));
+
+        if (updateError) {
+          console.error('Error resetting monthly limits:', updateError);
+        }
+      }
+
+      const formattedEmployees = employeesData.map((emp: any) => {
+        const needsReset = (emp.last_reset_month || '') !== currentMonth;
+        return {
+          id: emp.id,
+          name: emp.name,
+          email: emp.email,
+          employeeId: emp.id,
+          managerId: '',
+          department: '',
+          monthlyLimit: emp.monthly_limit,
+          currentMonthPickups: needsReset ? 0 : emp.current_month_pickups,
+          lastResetMonth: needsReset ? currentMonth : emp.last_reset_month || ''
+        } as Employee;
+      });
+
+      setEmployees(formattedEmployees);
+
+      if (user?.role === 'employee' && user.employeeId) {
+        const updatedEmployee = formattedEmployees.find(emp => emp.id === user.employeeId || emp.employeeId === user.employeeId);
+        if (updatedEmployee) {
+          setUser(prev => prev ? {
+            ...prev,
+            currentMonthPickups: updatedEmployee.currentMonthPickups,
+            lastResetMonth: updatedEmployee.lastResetMonth
+          } : prev);
+        }
+      }
+    } catch (err) {
+      console.error('Unexpected error resetting monthly limits:', err);
+    }
   };
 
   const login = async (email: string, password: string): Promise<{ error?: string }> => {
@@ -862,28 +912,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log('Pickup saved successfully');
 
-      // Update employee pickup count in database
-      const employee = employees.find(e => e.id === pickupData.employeeId);
-      
-      if (employee) {
-        const newCount = employee.currentMonthPickups + pickupData.quantity;
-        
-        const { error: updateError } = await (supabase as any)
-          .from('employees')
-          .update({ current_month_pickups: newCount })
-          .eq('id', pickupData.employeeId);
-        
-        if (updateError) {
-          console.error('Error updating employee count:', updateError);
-        } else {
-          // Update local state immediately
-          setEmployees(prev => prev.map(emp => 
-            emp.id === pickupData.employeeId 
-              ? { ...emp, currentMonthPickups: newCount }
-              : emp
-          ));
-        }
-      }
+      await updateEmployeePickupCount(pickupData.employeeId, pickupData.quantity);
 
       // Reload pickups from database
       const { data: pickupsData } = await (supabase as any)
@@ -966,50 +995,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   };
 
-  const updateEmployeePickupCount = (employeeId: string, quantity: number) => {
-    // Update in database
-    const employee = employees.find(emp => emp.employeeId === employeeId);
-    if (employee) {
-      const newCount = employee.currentMonthPickups + quantity;
-      
-      // Update local state immediately for UI responsiveness
-      const updatedEmployees = employees.map(emp => 
-        emp.employeeId === employeeId 
-          ? { ...emp, currentMonthPickups: newCount }
-          : emp
-      );
-      setEmployees(updatedEmployees);
+  const updateEmployeePickupCount = async (employeeId: string, quantity: number) => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
 
-      // Update in database
-      ((supabase as any).from('employees')
-        .update({ 
-          current_month_pickups: newCount
+    try {
+      const { data: employeeData, error } = await (supabase as any)
+        .from('employees')
+        .select('*')
+        .eq('id', employeeId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error loading employee for pickup update:', error);
+        return;
+      }
+
+      if (!employeeData) {
+        console.warn('Employee not found for pickup update:', employeeId);
+        return;
+      }
+
+      let lastResetMonth = employeeData.last_reset_month || '';
+      let currentMonthPickups = employeeData.current_month_pickups || 0;
+
+      if (lastResetMonth !== currentMonth) {
+        currentMonthPickups = 0;
+        lastResetMonth = currentMonth;
+      }
+
+      const newCount = Math.max(0, currentMonthPickups + quantity);
+
+      const { data: updatedEmployeeData, error: updateError } = await (supabase as any)
+        .from('employees')
+        .update({
+          current_month_pickups: newCount,
+          last_reset_month: lastResetMonth
         })
-        .eq('id', employeeId) as any)
-        .then(async ({ error }: any) => {
-          if (error) {
-            console.error('Error updating employee pickup count:', error);
-            // Revert local state on error
-            setEmployees(employees);
-          } else {
-            // Reload only employees from database to ensure consistency
-            const { data: allEmployeesData } = await (supabase as any).from('employees').select('*');
-            if (allEmployeesData) {
-              const formattedEmployees = allEmployeesData.map((emp: any) => ({
-                id: emp.id,
-                name: emp.name,
-                email: emp.email,
-                employeeId: emp.id,
-                managerId: '',
-                department: '',
-                monthlyLimit: emp.monthly_limit,
-                currentMonthPickups: emp.current_month_pickups,
-                lastResetMonth: emp.last_reset_month || ''
-              }));
-              setEmployees(formattedEmployees);
-            }
-          }
-        });
+        .eq('id', employeeId)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error('Error updating employee pickup count:', updateError);
+        return;
+      }
+
+      if (!updatedEmployeeData) {
+        return;
+      }
+
+      const formattedEmployee: Employee = {
+        id: updatedEmployeeData.id,
+        name: updatedEmployeeData.name,
+        email: updatedEmployeeData.email,
+        employeeId: updatedEmployeeData.id,
+        managerId: '',
+        department: '',
+        monthlyLimit: updatedEmployeeData.monthly_limit,
+        currentMonthPickups: updatedEmployeeData.current_month_pickups,
+        lastResetMonth: updatedEmployeeData.last_reset_month || ''
+      };
+
+      setEmployees(prev => {
+        const exists = prev.some(emp => emp.id === employeeId || emp.employeeId === employeeId);
+        if (exists) {
+          return prev.map(emp =>
+            emp.id === employeeId || emp.employeeId === employeeId
+              ? formattedEmployee
+              : emp
+          );
+        }
+        return [...prev, formattedEmployee];
+      });
+
+      if (user?.role === 'employee' && user.employeeId === employeeId) {
+        setUser(prev => prev ? {
+          ...prev,
+          currentMonthPickups: formattedEmployee.currentMonthPickups,
+          lastResetMonth: formattedEmployee.lastResetMonth
+        } : prev);
+      }
+    } catch (err) {
+      console.error('Unexpected error updating pickup count:', err);
     }
   };
 
@@ -1030,7 +1097,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setPickupSchedules(updatedPickups);
       
       // Restore employee available quantity
-      updateEmployeePickupCount(pickup.employeeId, -pickup.quantity);
+      updateEmployeePickupCount(pickup.employeeId, -pickup.quantity).catch(err => {
+        console.error('Error restoring employee pickup count after cancellation:', err);
+      });
 
       // Update in database
       ((supabase as any).from('pickup_schedules')
@@ -1074,7 +1143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetMonthlyLimits = () => {
-    checkAndResetMonthlyLimits();
+    return checkAndResetMonthlyLimits();
   };
 
   const updateStoreMaxCapacity = (storeId: string, newCapacity: number) => {
